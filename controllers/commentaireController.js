@@ -2,13 +2,14 @@ const { Commentaire } = require('../models');
 
 const commentaireController = {
   createCommentaire: async (request, reply) => {
-    const { content, userId, structureId } = request.body;
+    const { content, userId, structureId, documentId } = request.body;
 
     try {
       const newCommentaire = await Commentaire.create({
         content,
         userId,
-        structureId
+        structureId,
+        documentId
       });
 
       return reply.status(201).send(newCommentaire);

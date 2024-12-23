@@ -1,6 +1,3 @@
-const Joi = require('joi');
-const { v4: uuidv4 } = require('uuid');
-
 module.exports = (sequelize, DataTypes) => {
   const Commentaire = sequelize.define('Commentaire', {
     idComment: {
@@ -13,6 +10,7 @@ module.exports = (sequelize, DataTypes) => {
 
   Commentaire.associate = (models) => {
     Commentaire.belongsTo(models.User, { foreignKey: 'userId' });
+    Commentaire.belongsTo(models.Document, { foreignKey: 'documentId' });
   };
 
   return Commentaire;

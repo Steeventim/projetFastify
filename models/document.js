@@ -1,6 +1,3 @@
-const Joi = require('joi');
-const { v4: uuidv4 } = require('uuid');
-
 module.exports = (sequelize, DataTypes) => {
   const Document = sequelize.define('Document', {
     idDocument: {
@@ -8,9 +5,12 @@ module.exports = (sequelize, DataTypes) => {
       defaultValue: DataTypes.UUIDV4,
       primaryKey: true
     },
-    UrlDocument: DataTypes.STRING,
-    LibelleDocument: DataTypes.STRING,
+    Title: DataTypes.STRING,
   });
+
+  Document.associate = (models) => {
+    Document.hasMany(models.Commentaire, { foreignKey: 'documentId' });
+  };
 
   return Document;
 };
