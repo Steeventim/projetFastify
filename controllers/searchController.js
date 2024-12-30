@@ -1,23 +1,41 @@
 const axios = require('axios');
+const { Document } = require('../models'); // Assuming you have a Document model
 
 const searchController = {
   searchDocuments: async (request, reply) => {
-    const { query } = request.query; // Assuming the search query is passed as a query parameter
+    const { documentName, searchTerm } = request.params; // Extracting from request parameters
 
-    if (!query) {
-      return reply.status(400).send({ error: 'Search query is required' });
+    if (!documentName || !searchTerm) {
+      return reply.status(400).send({ error: 'Document name and search term are required' });
     }
 
     try {
-      // Make a request to the external API
-      const response = await axios.get(`http://external-api.com/search`, {
-        params: { query }
-      });
+      // Check if the document exists in the database
+      let document = await Document.findOne({ where: { Title: documentName } });
 
-      return reply.status(200).send(response.data);
+      if (!document) {
+        // Construct the URL with the document name and search term
+        const url = `http://localhost:3001/highlightera2/${documentName}/${searchTerm}`; // Update the hostname and port as needed
+
+        // Make a request to the external API
+        const response = await axios.get(url);
+
+        // Log the response to see its structure
+        console.log('External API response:', response.data);
+
+        // Store the new document in the database
+        document = await Document.create({
+          Title: documentName,
+          status: 'active' // Provide a value for the status field
+        });
+      }
+
+      // Proxy the PDF response from the external API
+      const pdfUrl = `http://localhost:3001/highlightera2/${documentName}/${searchTerm}`; // Update the hostname and port as needed
+      return reply.from(pdfUrl);
     } catch (error) {
-      console.error(error);
-      return reply.status(500).send({ error: 'Error searching documents' });
+      console.error('Error searching documents:', error.message);
+      return reply.status(500).send({ error: 'Error searching documents', details: error.message });
     }
   }
 };

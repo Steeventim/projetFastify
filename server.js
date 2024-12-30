@@ -1,5 +1,6 @@
 const fastify = require('fastify')();
 const cors = require('fastify-cors');
+const fastifyReplyFrom = require('fastify-reply-from');
 const db = require('./models');
 const userRoutes = require('./routes/userRoutes');
 const fastifyRoleRoutes = require('./routes/fastifyRoleRoutes');
@@ -21,42 +22,27 @@ fastify.register(require('fastify-rate-limit'), {
   timeWindow: '15 minutes'
 });
 
-// Register the routes with debugging
-try {
-  fastify.register(userRoutes);
-  console.log('User routes registered successfully');
-} catch (err) {
-  console.error('Error registering user routes:', err);
-}
+// Register the fastify-reply-from plugin
+fastify.register(fastifyReplyFrom);
 
-try {
-  fastify.register(fastifyPermissionRoutes);
-  console.log('Permission routes registered successfully');
-} catch (err) {
-  console.error('Error registering permission routes:', err);
-}
+// Register routes
+fastify.register(userRoutes);
+fastify.register(fastifyRoleRoutes);
+fastify.register(fastifyPermissionRoutes);
+fastify.register(structureRoutes);
+fastify.register(commentaireRoutes);
+fastify.register(etapeRoutes);
+fastify.register(projetRoutes);
+fastify.register(searchRoutes);
 
-// Repeat for all route files...
-
-// Global Error Handler
-fastify.setErrorHandler((error, request, reply) => {
-  console.error('Error occurred:', error);
-  reply.status(500).send({ error: 'An unexpected error occurred' });
-});
-
-// Start the server
 const start = async () => {
   try {
-    await db.sequelize.authenticate();
-    console.log('Database connected...');
-    await fastify.listen({ 
-      port: parseInt(process.env.PORT) || 3000,
-      host: process.env.HOST || 'localhost'
-    });
-    console.log(`Server is running on http://${process.env.HOST || 'localhost'}:${process.env.PORT || 3000}`);
+    await fastify.listen(process.env.PORT || 3002, process.env.HOST || 'localhost');
+    console.log(`Server is running on port ${process.env.PORT || 3002}`);
   } catch (err) {
-    console.error(err);
+    fastify.log.error(err);
     process.exit(1);
   }
 };
+
 start();

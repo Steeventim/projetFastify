@@ -5,7 +5,15 @@ module.exports = (sequelize, DataTypes) => {
       defaultValue: DataTypes.UUIDV4,
       primaryKey: true
     },
-    Title: DataTypes.STRING,
+    Title: { // Ensure this matches the actual column name in your database
+      type: DataTypes.STRING,
+      allowNull: false
+    },
+    status: { // Ensure this matches the actual column name in your database
+      type: DataTypes.STRING,
+      allowNull: false,
+      defaultValue: 'active' // Provide a default value if applicable
+    }
   });
 
   Document.associate = (models) => {
