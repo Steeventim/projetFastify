@@ -9,6 +9,7 @@ const structureRoutes = require('./routes/structureRoutes');
 const commentaireRoutes = require('./routes/commentaireRoutes');
 const etapeRoutes = require('./routes/etapeRoutes');
 const projetRoutes = require('./routes/projetRoutes');
+const assignPermissiontoRole = require('./routes/assignPermissiontoRole');
 const searchRoutes = require('./routes/searchRoutes');
 
 // CORS Configuration
@@ -33,6 +34,7 @@ fastify.register(structureRoutes);
 fastify.register(commentaireRoutes);
 fastify.register(etapeRoutes);
 fastify.register(projetRoutes);
+fastify.register(assignPermissiontoRole);
 fastify.register(searchRoutes);
 
 const start = async () => {

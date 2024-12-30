@@ -5,19 +5,32 @@ module.exports = (sequelize, DataTypes) => {
       defaultValue: DataTypes.UUIDV4,
       primaryKey: true
     },
-    Title: { // Ensure this matches the actual column name in your database
+    Title: {
       type: DataTypes.STRING,
       allowNull: false
     },
-    status: { // Ensure this matches the actual column name in your database
+    content: {
+      type: DataTypes.JSON, // Assuming the document content is JSON
+      allowNull: false
+    },
+    etapeId: {
+      type: DataTypes.UUID,
+      allowNull: false,
+      references: {
+        model: 'Etape', // name of the target model
+        key: 'idEtape' // key in the target model
+      }
+    },
+    status: {
       type: DataTypes.STRING,
       allowNull: false,
-      defaultValue: 'active' // Provide a default value if applicable
+      defaultValue: 'active'
     }
   });
 
   Document.associate = (models) => {
-    Document.hasMany(models.Commentaire, { foreignKey: 'documentId' });
+    Document.hasMany(models.Commentaire, { foreignKey: 'documentId', as: 'commentaires' });
+    Document.hasMany(models.File, { foreignKey: 'documentId', as: 'files' });
   };
 
   return Document;

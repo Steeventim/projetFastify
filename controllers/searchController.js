@@ -26,6 +26,7 @@ const searchController = {
         // Store the new document in the database
         document = await Document.create({
           Title: documentName,
+          content: response.data, // Assuming the response contains the document content
           status: 'active' // Provide a value for the status field
         });
       }
