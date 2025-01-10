@@ -10,7 +10,7 @@ module.exports = (sequelize, DataTypes) => {
       allowNull: false
     },
     content: {
-      type: DataTypes.JSON, // Assuming the document content is JSON
+      type: DataTypes.JSON, 
       allowNull: false
     },
     etapeId: {

@@ -31,7 +31,7 @@ const searchController = {
         });
       }
 
-      // Proxy the PDF response from the external API
+      // Always fetch the document from the external API based on the search term
       const pdfUrl = `http://localhost:3001/highlightera2/${documentName}/${searchTerm}`; // Update the hostname and port as needed
       return reply.from(pdfUrl);
     } catch (error) {

@@ -61,4 +61,8 @@ const documentController = {
   }
 };
 
+exports.forwardDocument = async function (req, res) {
+  // ...existing code...
+};
+
 module.exports = documentController;
