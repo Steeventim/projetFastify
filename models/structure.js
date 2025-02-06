@@ -9,9 +9,7 @@ module.exports = (sequelize, DataTypes) => {
       primaryKey: true
     },
     NomStructure: DataTypes.STRING,
-    LogoStructure: DataTypes.STRING,
-    EmailStructure: DataTypes.STRING,
-    AddressStructure: DataTypes.STRING,
+    DescriptionStructure: DataTypes.STRING,
   });
 
   Structure.associate = (models) => {

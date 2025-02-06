@@ -22,4 +22,9 @@ module.exports = async function (fastify, opts) {
   fastify.delete('/users/:id', { 
     preHandler: [authMiddleware.requireRole(['admin'])] 
   }, userController.deleteUser);
+
+  // Logout Route
+  fastify.post('/users/logout', { 
+    preHandler: [authMiddleware.verifyToken] 
+  }, userController.logout);
 };

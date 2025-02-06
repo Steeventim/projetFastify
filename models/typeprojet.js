@@ -9,7 +9,7 @@ module.exports = (sequelize, DataTypes) => {
       primaryKey: true
     },
     Libelle: DataTypes.STRING,
-    DateDemande: DataTypes.DATE,
+    Description: DataTypes.STRING,
   });
 
   TypeProjet.associate = (models) => {

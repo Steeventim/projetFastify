@@ -2,12 +2,12 @@ const { Etape } = require('../models');
 
 const etapeController = {
   createEtape: async (request, reply) => {
-    const { Libelle, DateDemande } = request.body;
+    const { Libelle, Description } = request.body;
 
     try {
       const newEtape = await Etape.create({
         Libelle,
-        DateDemande
+        Description
       });
 
       return reply.status(201).send(newEtape);

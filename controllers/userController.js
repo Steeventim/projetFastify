@@ -246,6 +246,31 @@ const userController = {
         message: error.message 
       });
     }
+  },
+
+  async logout(request, reply) {
+    try {
+      request.session.destroy(err => {
+        if (err) {
+          return reply.status(500).send({ 
+            statusCode: 500, 
+            error: 'Internal Server Error', 
+            message: 'Failed to log out.' 
+          });
+        }
+        reply.clearCookie('connect.sid');
+        return reply.status(200).send({ 
+          statusCode: 200, 
+          message: 'Logged out successfully.' 
+        });
+      });
+    } catch (error) {
+      return reply.status(500).send({ 
+        statusCode: 500, 
+        error: 'Internal Server Error', 
+        message: error.message 
+      });
+    }
   }
 };
 

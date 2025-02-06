@@ -1,7 +1,7 @@
 require('dotenv').config();
 const fastify = require('fastify')({
   logger: {
-    level: 'warn', // Set the logging level to 'warn' to reduce verbosity
+    level: 'debug', // Set the logging level to 'info' to see more detailed logs
     transport: {
       target: 'pino-pretty',
       options: {
@@ -10,8 +10,8 @@ const fastify = require('fastify')({
     }
   }
 });
-const cors = require('@fastify/cors'); // Correct package name
-const fastifyReplyFrom = require('@fastify/reply-from'); // Correct package name
+const cors = require('@fastify/cors');
+const replyFrom = require('@fastify/reply-from');
 const db = require('./models');
 const userRoutes = require('./routes/userRoutes');
 const fastifyRoleRoutes = require('./routes/fastifyRoleRoutes');
@@ -26,19 +26,20 @@ const assignPermissiontoRole = require('./routes/assignPermissiontoRole');
 
 // CORS Configuration
 fastify.register(cors, {
-  origin: '*', // Allow all origins. You can specify specific origins if needed.
-  methods: ['GET', 'POST', 'PUT', 'DELETE'], // Allowed HTTP methods
-  allowedHeaders: ['Content-Type', 'Authorization'] // Allowed headers
+  origin: true, // This will enable all origins during development
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true
 });
 
 // Use a Fastify-compatible rate limiter
-fastify.register(require('@fastify/rate-limit'), { // Correct package name
+fastify.register(require('@fastify/rate-limit'), {
   max: 100,
   timeWindow: '15 minutes'
 });
 
 // Register the fastify-reply-from plugin
-fastify.register(fastifyReplyFrom);
+fastify.register(replyFrom);
 
 // Register routes
 fastify.register(userRoutes);
@@ -56,10 +57,10 @@ fastify.register(documentRoutes);
 const start = async () => {
   try {
     await fastify.listen({
-      port: process.env.PORT ? parseInt(process.env.PORT) : 3003, // Changed port to 3003
+      port: process.env.PORT ? parseInt(process.env.PORT) : 3003,
       host: process.env.HOST || 'localhost'
     });
-    console.log(`Server is running on port ${process.env.PORT || 3003}`); // Updated log message
+    console.log(`Server is running on port ${process.env.PORT || 3003}`);
   } catch (err) {
     console.error('Error starting server:', err); // Add detailed error logging
     process.exit(1);
