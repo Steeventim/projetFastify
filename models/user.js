@@ -29,6 +29,14 @@ module.exports = (sequelize, DataTypes) => {
         isEmail: { msg: 'Invalid email format' }
       }
     },
+    structureId: {
+      type: DataTypes.UUID,
+      allowNull: true,  // Allow null if a user might not belong to a structure
+      references: {
+        model: 'Structures',
+        key: 'idStructure'  // Assuming this is your primary key in Structures table
+      }
+    },
     Password: {
       type: DataTypes.STRING,
       allowNull: false

@@ -8,23 +8,18 @@ module.exports = async function (fastify, opts) {
 
   // Protected Routes
   fastify.get('/users', { 
-    preHandler: [authMiddleware.requireRole(['admin'])] 
+    preHandler: [authMiddleware.verifyToken, authMiddleware.requireRole(['admin'])] 
   }, userController.getAllUsers);
 
   fastify.get('/users/:id', { 
-    preHandler: [authMiddleware.verifyToken] 
+    preHandler: [authMiddleware.verifyToken, authMiddleware.requireRole(['admin'])] 
   }, userController.getUserById);
 
   fastify.put('/users/:id', { 
-    preHandler: [authMiddleware.verifyToken] 
+    preHandler: [authMiddleware.verifyToken, authMiddleware.requireRole(['admin'])] 
   }, userController.updateUser);
 
   fastify.delete('/users/:id', { 
-    preHandler: [authMiddleware.requireRole(['admin'])] 
+    preHandler: [authMiddleware.verifyToken, authMiddleware.requireRole(['admin'])] 
   }, userController.deleteUser);
-
-  // Logout Route
-  fastify.post('/users/logout', { 
-    preHandler: [authMiddleware.verifyToken] 
-  }, userController.logout);
 };

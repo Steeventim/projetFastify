@@ -17,14 +17,12 @@ const authMiddleware = {
 
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
       
-      // Fetch user with roles and permissions
+      // Fetch user with roles
       const user = await User.findByPk(decoded.id, {
-        include: [
-          {
-            model: Role,
-            include: [Permission]
-          }
-        ]
+        include: [{
+          model: Role,
+          attributes: ['name', 'description', 'isSystemRole']
+        }]
       });
 
       if (!user) {
@@ -35,15 +33,23 @@ const authMiddleware = {
         });
       }
 
-      // Attach user and permissions to request
+      // Check if user is superadmin
+      const isSuperAdmin = user.Roles.some(role => role.name === 'superadmin');
+
+      // Attach user info to request
       request.user = {
-        id: user.idUser,
-        email: user.Email,
-        roles: user.Roles.map(role => role.name),
-        permissions: user.Roles.flatMap(role => 
-          role.Permissions.map(perm => perm.LibellePerm)
-        )
+        idUser: user.idUser,
+        Email: user.Email,
+        NomUser: user.NomUser,
+        PrenomUser: user.PrenomUser,
+        isSuperAdmin,
+        roles: user.Roles.map(role => ({
+          name: role.name,
+          description: role.description,
+          isSystemRole: role.isSystemRole
+        }))
       };
+
     } catch (error) {
       if (error.name === 'TokenExpiredError') {
         return reply.status(401).send({ 
@@ -59,6 +65,17 @@ const authMiddleware = {
       });
     }
   },
+
+  requireSuperAdmin: async (request, reply) => {
+    if (!request.user?.isSuperAdmin) {
+      return reply.status(403).send({
+        statusCode: 403,
+        error: 'Forbidden',
+        message: 'Super Administrator access required'
+      });
+    }
+  },
+
 
   // Role-Based Access Control
   requireRole: (allowedRoles) => {
@@ -99,20 +116,26 @@ const authMiddleware = {
   },
 
   // Generate JWT Token
-  generateToken: (user, roles = [], permissions = []) => {
+  generateToken: (user) => {
+    const isSuperAdmin = user.Roles?.some(role => role.name === 'superadmin');
+    
     return jwt.sign(
       { 
         id: user.idUser, 
-        email: user.Email, 
-        roles: roles.map(role => role.name),
-        permissions: permissions.map(perm => perm.LibellePerm)
+        email: user.Email,
+        roles: user.Roles?.map(role => ({
+          name: role.name,
+          description: role.description,
+          isSystemRole: role.isSystemRole
+        })) || [],
+        isSuperAdmin
       }, 
       process.env.JWT_SECRET, 
       { 
         expiresIn: process.env.JWT_EXPIRATION || '1h' 
       }
     );
-  },
+  }
 };
 
 module.exports = authMiddleware;

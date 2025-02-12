@@ -6,11 +6,34 @@ module.exports = (sequelize, DataTypes) => {
       primaryKey: true
     },
     Contenu: DataTypes.STRING,
+    documentId: {
+      type: DataTypes.UUID,
+      allowNull: false,
+      references: {
+        model: 'Documents',
+        key: 'idDocument'
+      }
+    },
+    userId: {
+      type: DataTypes.UUID,
+      allowNull: false,
+      references: {
+        model: 'Users',
+        key: 'idUser'
+      }
+    }
   });
 
   Commentaire.associate = (models) => {
-    Commentaire.belongsTo(models.User, { foreignKey: 'userId' });
-    Commentaire.belongsTo(models.Document, { foreignKey: 'documentId' });
+    Commentaire.belongsTo(models.User, { 
+      foreignKey: 'userId',
+      as: 'user' 
+    });
+    Commentaire.belongsTo(models.Document, { 
+      foreignKey: 'documentId',
+      as: 'document',
+      onDelete: 'CASCADE'
+    });
   };
 
   return Commentaire;

@@ -11,6 +11,7 @@ const fastify = require('fastify')({
   }
 });
 const cors = require('@fastify/cors');
+const initializationRoutes = require('./routes/initializationRoutes');
 const replyFrom = require('@fastify/reply-from');
 const db = require('./models');
 const userRoutes = require('./routes/userRoutes');
@@ -22,6 +23,7 @@ const etapeRoutes = require('./routes/etapeRoutes');
 const projetRoutes = require('./routes/projetRoutes');
 const searchRoutes = require('./routes/searchRoutes');
 const documentRoutes = require('./routes/documentRoutes');
+const etapeTypeProjetRoutes = require('./etapeTypeProjetRoutes');
 const assignPermissiontoRole = require('./routes/assignPermissiontoRole');
 
 // CORS Configuration
@@ -51,7 +53,9 @@ fastify.register(etapeRoutes);
 fastify.register(projetRoutes);
 fastify.register(assignPermissiontoRole);
 fastify.register(searchRoutes);
+fastify.register(etapeTypeProjetRoutes);
 fastify.register(documentRoutes);
+fastify.register(initializationRoutes);
 
 
 const start = async () => {

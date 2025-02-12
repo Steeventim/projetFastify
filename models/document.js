@@ -29,8 +29,20 @@ module.exports = (sequelize, DataTypes) => {
   });
 
   Document.associate = (models) => {
-    Document.hasMany(models.Commentaire, { foreignKey: 'documentId', as: 'commentaires' });
-    Document.hasMany(models.File, { foreignKey: 'documentId', as: 'files' });
+    Document.hasMany(models.Commentaire, { 
+      foreignKey: 'documentId', 
+      as: 'commentaires',
+      onDelete: 'CASCADE'
+    });
+    Document.hasMany(models.File, { 
+      foreignKey: 'documentId', 
+      as: 'files',
+      onDelete: 'CASCADE'
+    });
+    Document.belongsTo(models.Etape, {
+      foreignKey: 'etapeId',
+      as: 'etape'
+    });
   };
 
   return Document;
