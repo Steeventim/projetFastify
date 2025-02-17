@@ -3,7 +3,7 @@ const { v4: uuidv4 } = require('uuid');
 
 module.exports = (sequelize, DataTypes) => {
   const TypeProjet = sequelize.define('TypeProjet', {
-    idTypeProjet: {  // Changed from idType to idTypeProjet
+    idType: {
       type: DataTypes.UUID,
       defaultValue: DataTypes.UUIDV4,
       primaryKey: true
@@ -18,7 +18,7 @@ module.exports = (sequelize, DataTypes) => {
   TypeProjet.associate = (models) => {
     TypeProjet.belongsToMany(models.Etape, { 
       through: 'EtapeTypeProjet', 
-      foreignKey: 'typeProjetId',  // Changed from typeId to typeProjetId
+      foreignKey: 'idType',
       otherKey: 'etapeId'
     });
   };

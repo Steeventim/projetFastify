@@ -23,7 +23,7 @@ const etapeRoutes = require('./routes/etapeRoutes');
 const projetRoutes = require('./routes/projetRoutes');
 const searchRoutes = require('./routes/searchRoutes');
 const documentRoutes = require('./routes/documentRoutes');
-const etapeTypeProjetRoutes = require('./etapeTypeProjetRoutes');
+const etapeTypeProjetRoutes = require('./routes/etapeTypeProjetRoutes');
 const assignPermissiontoRole = require('./routes/assignPermissiontoRole');
 
 // CORS Configuration

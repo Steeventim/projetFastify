@@ -88,7 +88,7 @@ const userController = {
         });
       }
 
-      const hashedPassword = await bcrypt.hash(value.Password, 10);
+      const hashedPassword = await bcrypt.hash(value.Password, 10); // Hash the password before saving
       const newUser = await User.create({
         ...value,
         Password: hashedPassword
@@ -112,7 +112,7 @@ const userController = {
     }
   },
 
-  async login(request, reply) {
+   async login(request, reply) {
     try {
       const { Email, Password } = request.body;
       console.log('Login attempt for email:', Email);
@@ -136,9 +136,9 @@ const userController = {
         });
       }
   
-      const isMatch = await bcrypt.compare(Password, user.Password);
+      const isMatch = await bcrypt.compare(Password, user.Password); // Verify the password against the hashed password
       if (!isMatch) {
-        return reply.status(401).send({
+        return reply.status(401).send({ // Send unauthorized response if credentials are invalid
           statusCode: 401,
           error: 'Unauthorized',
           message: 'Invalid credentials'
@@ -249,7 +249,8 @@ const userController = {
       await user.update(updates);
 
       // Fetch updated user with roles
-      const updatedUser = await User.findByPk(id, {
+        const updatedUser = await User.findByPk(id, { // Fetch updated user details
+
         attributes: { exclude: ['Password'] },
         include: [{
           model: Role,
@@ -321,6 +322,7 @@ const userController = {
       });
 
     } catch (error) {
+      console.error('Delete user error:', error);
       return reply.status(500).send({ 
         statusCode: 500, 
         error: 'Internal Server Error', 
