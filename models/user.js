@@ -77,7 +77,7 @@ module.exports = (sequelize, DataTypes) => {
     }
   });
 
-  const userSchema = Joi.object({
+const userSchema = Joi.object({
     NomUser: Joi.string().min(2).max(50).required(),
     PrenomUser: Joi.string().min(2).max(50).optional(),
     Email: Joi.string().email().required(),
@@ -87,8 +87,13 @@ module.exports = (sequelize, DataTypes) => {
       .message('Invalid phone number format')
       .required(),
     LastLogin: Joi.date().optional(),
-    IsActive: Joi.boolean().optional()
+    IsActive: Joi.boolean().optional(),
+    roleNames: Joi.alternatives().try(
+      Joi.string(),
+      Joi.array().items(Joi.string())
+    ).optional()
   });
+
 
   User.validate = (user) => userSchema.validate(user);
 

@@ -15,9 +15,10 @@ module.exports = (sequelize, DataTypes) => {
 
   Etape.associate = (models) => {
     Etape.belongsToMany(models.TypeProjet, { through: 'EtapeTypeProjet', foreignKey: 'etapeId' });
-    // Add the following line to establish the relationship with Document
-    Etape.hasMany(models.Document, { foreignKey: 'etapeId', as: 'documents' }); // New association
+    Etape.hasMany(models.Document, { foreignKey: 'etapeId', as: 'documents' });
+    Etape.belongsTo(models.Role, { foreignKey: 'roleId', as: 'role' });
   };
+
 
   return Etape;
 };

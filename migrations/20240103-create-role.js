@@ -29,6 +29,10 @@ module.exports = {
         allowNull: false,
         type: Sequelize.DATE,
       },
+      permissions: {
+        type: Sequelize.ARRAY(Sequelize.STRING),
+        allowNull: true
+      },
     });
   },
 

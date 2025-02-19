@@ -1,16 +1,57 @@
-const { Role } = require('../models');
+const { Role, Etape } = require('../models');
 
 // Create Role
 const createRole = async (request, reply) => {
     try {
-        const { name, description, isSystemRole } = request.body;
+        const { name, description, isSystemRole, etapeName, permissions } = request.body;
+
+        // Validate etapeName
+        if (!etapeName) {
+            console.error('Etape name is required in request body');
+            return reply.status(400).send({ 
+                error: 'etapeName is required',
+                details: 'Please provide a valid etapeName in the request body'
+            });
+        }
+
+        // Find the etape by name
+        const etape = await Etape.findOne({ where: { LibelleEtape: etapeName } });
+
+        if (!etape) {
+            console.error(`Etape not found: ${etapeName}`);
+            return reply.status(404).send({ 
+                message: 'Etape not found',
+                details: `No etape found with name: ${etapeName}`
+            });
+        }
+
+        const roleData = {
+            name,
+            description,
+            isSystemRole,
+            permissions
+        };
+
         const [role, created] = await Role.findOrCreate({
             where: { name },
-            defaults: { description, isSystemRole }
+            defaults: roleData
         });
-        reply.code(201).send(role);
+        
+        // Update the etape with the roleId
+        await etape.update({ roleId: role.idRole });
+
+        console.log(`Role created successfully: ${role.name}`);
+        reply.code(201).send({
+            ...role.toJSON(),
+            message: 'Role created successfully'
+        });
+
     } catch (error) {
-        reply.code(400).send({ error: error.message });
+        console.error('Error creating role:', error);
+        reply.code(400).send({ 
+            error: error.message,
+            details: 'An error occurred while processing the role creation request'
+        });
     }
 };
 

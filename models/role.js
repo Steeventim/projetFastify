@@ -23,7 +23,12 @@ module.exports = (sequelize, DataTypes) => {
     isSystemRole: {
       type: DataTypes.BOOLEAN,
       defaultValue: false
+    },
+    permissions: {
+      type: DataTypes.ARRAY(DataTypes.STRING),
+      allowNull: true
     }
+
   });
 
   const roleSchema = Joi.object({
@@ -36,7 +41,9 @@ module.exports = (sequelize, DataTypes) => {
         'string.pattern.base': 'Role name must contain only letters and underscores'
       }),
     description: Joi.string().optional().max(255),
-    isSystemRole: Joi.boolean().optional()
+    isSystemRole: Joi.boolean().optional(),
+    permissions: Joi.array().items(Joi.string()).optional()
+
   });
 
   Role.validate = (role) => roleSchema.validate(role);
@@ -48,12 +55,15 @@ module.exports = (sequelize, DataTypes) => {
       foreignKey: 'roleId' 
     });
 
-    // Many-to-Many relationship with Permissions
-    Role.belongsToMany(models.Permission, { 
-      through: 'RolePermissions', 
-      foreignKey: 'roleId' 
+
+
+    // One-to-Many relationship with Etapes
+    Role.hasMany(models.Etape, {
+      foreignKey: 'roleId',
+      as: 'etapes'
     });
   };
+
 
   return Role;
 };
