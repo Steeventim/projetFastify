@@ -67,9 +67,6 @@ const userController = {
   async createUser(request, reply) {
     try {
       const { error, value } = User.validate(request.body);
-      const { roleNames } = request.body; // Get role names from request body
-
-
       
       if (error) {
         return reply.status(400).send({ 
@@ -91,38 +88,64 @@ const userController = {
         });
       }
 
-      const hashedPassword = await bcrypt.hash(value.Password, 10); // Hash the password before saving
-      const newUser = await User.create({
-        ...value,
-        Password: hashedPassword
-      });
+      const newUser = await User.create(value);
 
-      // Assign roles if provided
-      if (roleNames) {
-        // Convert single role name to array if needed
-        const rolesToAssign = Array.isArray(roleNames) ? roleNames : [roleNames];
+      // Get roles from either roles or roleNames parameter
+      const rolesParam = value.roles || value.roleNames;
+      
+      // Assign roles if provided - accepts both single role string and array of roles
+      if (rolesParam) {
+        // Convert single role to array if needed
+        const rolesToAssign = Array.isArray(rolesParam) ? rolesParam : [rolesParam];
+
+        
         const roles = await Role.findAll({
           where: {
             name: rolesToAssign
           }
         });
 
-
-
-        if (roles.length > 0) {
-          await Promise.all(roles.map(role => 
-            UserRoles.create({
-              id: uuidv4(),
-              userId: newUser.idUser,
-              roleId: role.idRole
-            })
-          ));
+        // Verify all requested roles exist
+        if (roles.length !== rolesToAssign.length) {
+          const foundRoleNames = roles.map(role => role.name);
+          const missingRoles = rolesToAssign.filter(role => !foundRoleNames.includes(role));
+          
+          return reply.status(400).send({
+            statusCode: 400,
+            error: 'Bad Request',
+            message: `The following roles do not exist: ${missingRoles.join(', ')}`
+          });
         }
+
+        await Promise.all(roles.map(role => 
+          UserRoles.create({
+            id: uuidv4(),
+            userId: newUser.idUser,
+            roleId: role.idRole
+          })
+        ));
+      } else {
+        // Assign default 'user' role if no roles specified
+        const [userRole] = await Role.findOrCreate({
+          where: { name: 'user' },
+          defaults: {
+            idRole: uuidv4(),
+            description: 'Regular user with basic access',
+            isSystemRole: false
+          }
+        });
+
+        await UserRoles.create({
+          id: uuidv4(),
+          userId: newUser.idUser,
+          roleId: userRole.idRole
+        });
       }
+
+
 
       // Fetch user with roles
       const userWithRoles = await User.findByPk(newUser.idUser, {
-        attributes: { exclude: ['Password'] },
         include: [{
           model: Role,
           through: 'UserRoles',
@@ -136,7 +159,7 @@ const userController = {
         user: {
           id: userWithRoles.idUser,
           email: userWithRoles.Email,
-          roles: userWithRoles.Roles
+          roles: userWithRoles.Roles.map(role => role.name)
         },
         token
       });
@@ -150,17 +173,17 @@ const userController = {
     }
   },
 
-  async login(request, reply) {
+   async login(request, reply) {
     try {
       const { Email, Password } = request.body;
       console.log('Login attempt for email:', Email);
   
-      // Find user with roles using the correct through model reference
+      // Find user with roles
       const user = await User.findOne({
         where: { Email },
         include: [{
           model: Role,
-          through: UserRoles, // Corrected here
+          through: 'UserRoles',
           attributes: ['idRole', 'name', 'description', 'isSystemRole']
         }],
         attributes: ['idUser', 'Email', 'Password', 'NomUser', 'PrenomUser', 'LastLogin']
@@ -174,47 +197,44 @@ const userController = {
         });
       }
   
-      const isMatch = await bcrypt.compare(Password, user.Password);
+      const isMatch = await bcrypt.compare(Password, user.Password); // Verify the password against the hashed password
       if (!isMatch) {
-        return reply.status(401).send({
+        return reply.status(401).send({ // Send unauthorized response if credentials are invalid
           statusCode: 401,
           error: 'Unauthorized',
           message: 'Invalid credentials'
         });
       }
   
-      // Check if user has any roles using the correct property
+      // Check if user has any roles
       if (!user.Roles || user.Roles.length === 0) {
-        console.log('User has no roles. Assigning default role.');
-        // Find or create default role
-        const [defaultRole] = await Role.findOrCreate({
+        // Find or create user role
+        const [userRole] = await Role.findOrCreate({
           where: { name: 'user' },
           defaults: {
             idRole: uuidv4(),
-            description: 'Default user role',
-            isSystemRole: true
+            description: 'Regular user with basic access',
+            isSystemRole: false
           }
         });
-  
-        // Create user-role association
+
+        // Create user-role association directly
         await UserRoles.create({
           id: uuidv4(),
           userId: user.idUser,
-          roleId: defaultRole.idRole
+          roleId: userRole.idRole
         });
+
   
-        // Reload user with new roles
+        // Reload user with new role
         await user.reload({
           include: [{
             model: Role,
-            through: UserRoles,
+            through: 'UserRoles',
             attributes: ['idRole', 'name', 'description', 'isSystemRole']
           }]
         });
-      } else {
-        console.log('User already has roles, maintaining existing roles.');
       }
-
   
       const userRoles = user.Roles.map(role => ({
         id: role.idRole,
@@ -228,21 +248,23 @@ const userController = {
       const currentTime = new Date();
       await user.update({ LastLogin: currentTime });
   
-      const token = authMiddleware.generateToken({
-        idUser: user.idUser,
-        Email: user.Email,
-        Roles: userRoles
-      });
-  
       const responseData = {
-        token,
+        token: authMiddleware.generateToken({
+          idUser: user.idUser,
+          Email: user.Email,
+          Roles: userRoles,
+          isSuperAdmin: userRoles.some(role => role.name === 'superadmin')
+        }),
+
         user: {
           id: user.idUser,
           email: user.Email,
           nomUser: user.NomUser,
           prenomUser: user.PrenomUser,
+          isSuperAdmin: userRoles.some(role => role.name === 'superadmin'),
           lastLogin: currentTime,
           roles: userRoles
+
         }
       };
   

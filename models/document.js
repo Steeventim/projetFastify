@@ -25,6 +25,14 @@ module.exports = (sequelize, DataTypes) => {
       type: DataTypes.STRING,
       allowNull: false,
       defaultValue: 'active'
+    },
+    transferStatus: {
+      type: DataTypes.ENUM('pending', 'sent', 'received', 'viewed'),
+      defaultValue: 'pending'
+    },
+    transferTimestamp: {
+      type: DataTypes.DATE,
+      allowNull: true
     }
   });
 

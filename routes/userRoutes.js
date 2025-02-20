@@ -1,10 +1,15 @@
 const userController = require('../controllers/userController');
 const authMiddleware = require('../middleware/authMiddleware');
+const passwordResetController = require('../controllers/passwordResetController');
 
 module.exports = async function (fastify, opts) {
   // Public Routes
   fastify.post('/users/login', userController.login);
   fastify.post('/users/register', userController.createUser);
+  
+  // Password Reset Routes
+  fastify.post('/users/request-reset', passwordResetController.requestReset);
+  fastify.post('/users/reset-password', passwordResetController.resetPassword);
 
   // Protected Routes
   fastify.get('/users', { 

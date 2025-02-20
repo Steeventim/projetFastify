@@ -6,4 +6,9 @@ module.exports = async function (fastify, opts) {
   fastify.post('/forward-document', { 
     preHandler: [authMiddleware.verifyToken, authMiddleware.requireRole(['admin'])]
   }, documentController.forwardDocument);
+
+  // Route to view a document
+  fastify.get('/document/:documentId', {
+    preHandler: [authMiddleware.verifyToken]
+  }, documentController.viewDocument);
 };

@@ -37,10 +37,19 @@ module.exports = (sequelize, DataTypes) => {
         key: 'idStructure'  // Assuming this is your primary key in Structures table
       }
     },
-    Password: {
-      type: DataTypes.STRING,
-      allowNull: false
-    },
+      Password: {
+        type: DataTypes.STRING,
+        allowNull: false
+      },
+      resetToken: {
+        type: DataTypes.STRING,
+        allowNull: true
+      },
+      resetTokenExpiry: {
+        type: DataTypes.DATE,
+        allowNull: true
+      },
+
     Telephone: {
       type: DataTypes.STRING,
       allowNull: false,

@@ -20,7 +20,20 @@ module.exports = (sequelize, DataTypes) => {
     filePath: {
       type: DataTypes.STRING,
       allowNull: false
+    },
+    fileType: {
+      type: DataTypes.STRING,
+      allowNull: false
+    },
+    fileSize: {
+      type: DataTypes.INTEGER,
+      allowNull: false
+    },
+    thumbnailPath: {
+      type: DataTypes.STRING,
+      allowNull: true
     }
+
   });
 
   File.associate = (models) => {
