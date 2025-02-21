@@ -4,6 +4,7 @@ const authMiddleware = require('../middleware/authMiddleware');
 const roleController = require('../controllers/roleController');
 
 
+
 module.exports = async function (fastify, opts) {
   // Create Role
   fastify.post('/roles', { 
@@ -17,6 +18,13 @@ module.exports = async function (fastify, opts) {
   fastify.delete('/roles/:roleId', { 
     preHandler: [authMiddleware.verifyToken, authMiddleware.requireRole(['admin'])] 
   }, roleController.deleteRole);
+
+  // Get all roles
+  fastify.get('/rolesss', {
+    preHandler: [authMiddleware.verifyToken, authMiddleware.requireRole(['admin'])]
+  }, roleController.getAllRoles);
+
+
 
 
 };

@@ -1,42 +1,96 @@
 const axios = require('axios');
-const { Document } = require('../models'); // Assuming you have a Document model
+const { Document, Etape } = require('../models');
 
 const searchController = {
-  searchDocuments: async (request, reply) => {
-    const { documentName, searchTerm } = request.params; // Extracting from request parameters
+  searchDocumentsWithoutName: async (request, reply) => {
+    const { searchTerm } = request.params;
 
-    if (!documentName || !searchTerm) {
-      return reply.status(400).send({ error: 'Document name and search term are required' });
+    if (!searchTerm) {
+      return reply.code(400).send({ error: 'Search term is required' });
     }
 
     try {
-      // Check if the document exists in the database
-      let document = await Document.findOne({ where: { Title: documentName } });
+      const apiBaseUrl = 'http://localhost:3001';
+      // Remove /api/ prefix and use consistent URL format
+      const searchUrl = `${apiBaseUrl}/highlightera2/${searchTerm}`;
+      console.log('Attempting API call to:', searchUrl);
 
-      if (!document) {
-        // Construct the URL with the document name and search term
-        const url = `http://localhost:3001/highlightera2/${documentName}/${searchTerm}`; // Update the hostname and port as needed
+      const response = await axios.get(searchUrl, { 
+        responseType: 'stream', // Set to stream for PDF
+        timeout: 10000,
+        headers: {
+          'Accept': 'application/pdf'
+        },
+        validateStatus: null // Allow all status codes to be handled in our code
+      });
 
-        // Make a request to the external API
-        const response = await axios.get(url);
+      console.log('API Response Status:', response.status);
 
-        // Log the response to see its structure
-        console.log('External API response:', response.data);
-
-        // Store the new document in the database
-        document = await Document.create({
-          Title: documentName,
-          content: response.data, // Assuming the response contains the document content
-          status: 'active' // Provide a value for the status field
+      if (response.status === 404) {
+        console.log('API returned 404 - Document not found');
+        return reply.code(404).send({ 
+          error: 'Document not found', 
+          searchTerm 
         });
       }
 
-      // Always fetch the document from the external API based on the search term
-      const pdfUrl = `http://localhost:3001/highlightera2/${documentName}/${searchTerm}`; // Update the hostname and port as needed
-      return reply.from(pdfUrl);
+      if (response.status !== 200) {
+        console.log(`API returned unexpected status: ${response.status}`);
+        return reply.code(response.status).send({
+          error: 'Unexpected API response'
+        });
+      }
+
+      // Stream PDF response
+      reply.type('application/pdf');
+      return reply.send(response.data);
+
     } catch (error) {
-      console.error('Error searching documents:', error.message);
-      return reply.status(500).send({ error: 'Error searching documents', details: error.message });
+      console.error('API Call Failed:', {
+        message: error.message,
+        code: error.code,
+        url: error.config?.url
+      });
+
+      if (error.code === 'ECONNREFUSED') {
+        return reply.code(503).send({
+          error: 'External search service unavailable',
+          details: 'Could not connect to search service'
+        });
+      }
+
+      return reply.code(500).send({ 
+        error: 'Search service error', 
+        details: error.message 
+      });
+    }
+  },
+
+  searchDocuments: async (request, reply) => {
+    const { documentName, searchTerm } = request.params;
+
+    if (!documentName || !searchTerm) {
+      return reply.code(400).send({ error: 'Document name and search term are required' });
+    }
+
+    try {
+      const pdfUrl = `http://localhost:3001/highlightera2/${documentName}/${searchTerm}`;
+      console.log('Calling external API:', pdfUrl);
+
+      const response = await axios.get(pdfUrl, { 
+        responseType: 'stream',
+        timeout: 10000
+      });
+
+      reply.type('application/pdf');
+      return reply.send(response.data);
+
+    } catch (error) {
+      console.error('External API error:', error.message);
+      return reply.code(503).send({ 
+        error: 'External search service error', 
+        details: error.message 
+      });
     }
   }
 };

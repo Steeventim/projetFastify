@@ -15,16 +15,19 @@ module.exports = (sequelize, DataTypes) => {
     },
     etapeId: {
       type: DataTypes.UUID,
-      allowNull: false,
+      allowNull: true,
       references: {
         model: 'Etape', // name of the target model
         key: 'idEtape' // key in the target model
       }
     },
     status: {
-      type: DataTypes.STRING,
+      type: DataTypes.ENUM('verified', 'pending', 'rejected'),
       allowNull: false,
-      defaultValue: 'active'
+      defaultValue: 'pending',
+      validate: {
+        isIn: [['verified', 'pending', 'rejected']]
+      }
     },
     transferStatus: {
       type: DataTypes.ENUM('pending', 'sent', 'received', 'viewed'),
@@ -33,8 +36,24 @@ module.exports = (sequelize, DataTypes) => {
     transferTimestamp: {
       type: DataTypes.DATE,
       allowNull: true
+    },
+    url: {
+      type: DataTypes.STRING,
+      allowNull: true,
+      validate: {
+        isUrl: true
+      }
     }
   });
+
+  Document.prototype.checkEtapeCompletion = async function() {
+    const etape = await this.getEtape();
+    if (!etape) return false;
+    
+    // Add logic here to check if all required steps are completed
+    // This is a placeholder - implement actual verification logic
+    return true;
+  };
 
   Document.associate = (models) => {
     Document.hasMany(models.Commentaire, { 

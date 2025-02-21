@@ -94,8 +94,23 @@ const deleteRole = async (request, reply) => {
     }
 };
 
+// Get all roles
+const getAllRoles = async (request, reply) => {
+    try {
+        const roles = await Role.findAll();
+        reply.code(200).send(roles);
+    } catch (error) {
+        console.error('Error fetching roles:', error);
+        reply.code(500).send({ 
+            error: error.message,
+            details: 'An error occurred while fetching roles'
+        });
+    }
+};
+
 module.exports = {
     createRole,
     updateRole,
-    deleteRole
+    deleteRole,
+    getAllRoles
 };

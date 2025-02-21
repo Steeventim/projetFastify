@@ -2,7 +2,27 @@ const db = require('../models');
 const { v4: uuidv4 } = require('uuid');
 
 const etapeController = {
+  // Get all etapes
+  getAllEtapes: async (request, reply) => {
+    try {
+      const etapes = await db.Etape.findAll({
+        include: [{
+          model: db.TypeProjet,
+          through: { attributes: [] }
+        }]
+      });
+      reply.code(200).send(etapes);
+    } catch (error) {
+      console.error('Error fetching etapes:', error);
+      reply.code(500).send({ 
+        error: error.message,
+        details: 'An error occurred while fetching etapes'
+      });
+    }
+  },
+
   createEtape: async (request, reply) => {
+
     const { LibelleEtape, Description, Validation, typeProjetLibelle } = request.body;
 
     try {
@@ -28,19 +48,29 @@ const etapeController = {
         });
       }
 
-      // Create the etape
+      // Get the max sequence number for this typeProjet
+      const maxSequence = await db.Etape.max('sequenceNumber', {
+        include: [{
+          model: db.TypeProjet,
+          where: { idType: typeProjet.idType },
+          through: { attributes: [] }
+        }]
+      }) || 0;
+
+      // Create the etape with next sequence number
       const newEtape = await db.Etape.create({
         idEtape: uuidv4(),
         LibelleEtape,
         Description,
-        Validation
+        Validation,
+        sequenceNumber: maxSequence + 1
       });
 
       // Create the association directly
       await db.EtapeTypeProjet.create({
         id: uuidv4(),
         etapeId: newEtape.idEtape,
-        idType: typeProjet.idType  // Changed from typeProjetId to idType
+        idType: typeProjet.idType
       });
 
       return reply.status(201).send({

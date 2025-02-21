@@ -25,6 +25,17 @@ const structureController = {
       console.error('Create structure error:', error);
       return reply.status(500).send({ error: error.message });
     }
+  },
+  getAllStructures: async (request, reply) => {
+    try {
+      const structures = await Structure.findAll({
+        order: [['createdAt', 'DESC']]
+      });
+      return reply.send(structures);
+    } catch (error) {
+      console.error('Error fetching structures:', error);
+      return reply.code(500).send({ error: 'Error fetching structures' });
+    }
   }
 };
 

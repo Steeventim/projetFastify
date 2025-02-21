@@ -1,38 +1,28 @@
-const { TypeProjet } = require('../models');
+const { Projet } = require('../models');
 const { v4: uuidv4 } = require('uuid');
 
-const createProjet = async (req, res) => {
-  try {
-    const { Libelle, Description } = req.body;
-
-    // Validate required fields
-    if (!Libelle) {
-      return res.status(400).send({ error: 'Libelle is required' });
+const projetController = {
+  createProjet: async (request, reply) => {
+    try {
+      const projet = await Projet.create(request.body);
+      return reply.code(201).send(projet);
+    } catch (error) {
+      console.error('Error creating projet:', error);
+      return reply.code(500).send({ error: 'Error creating projet' });
     }
+  },
 
-    // Validate data types
-    if (typeof Libelle !== 'string' || (Description && typeof Description !== 'string')) {
-      return res.status(400).send({ error: 'Invalid data types provided' });
+  getAllProjets: async (request, reply) => {
+    try {
+      const projets = await Projet.findAll({
+        order: [['createdAt', 'DESC']]
+      });
+      return reply.send(projets);
+    } catch (error) {
+      console.error('Error fetching projets:', error);
+      return reply.code(500).send({ error: 'Error fetching projets' });
     }
-
-    // Validate Libelle length
-    if (Libelle.length > 255) {
-      return res.status(400).send({ error: 'Libelle must be 255 characters or less' });
-    }
-
-    const newProjet = await TypeProjet.create({
-      idType: uuidv4(),
-      Libelle,
-      Description
-    });
-
-    res.status(201).send(newProjet);
-  } catch (error) {
-    console.error('Error creating projet:', error);
-    res.status(500).send({ error: 'Failed to create projet' });
   }
 };
 
-module.exports = {
-  createProjet
-};
+module.exports = projetController;

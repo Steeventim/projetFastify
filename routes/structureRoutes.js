@@ -6,4 +6,9 @@ module.exports = async function (fastify, opts) {
   fastify.post('/structures', { 
     preHandler: [authMiddleware.verifyToken, authMiddleware.requireRole(['admin'])] 
   }, structureController.createStructure);
+
+   // Get all structures
+   fastify.get('/structures/all', {
+    preHandler: [authMiddleware.verifyToken]
+  }, structureController.getAllStructures);
 };

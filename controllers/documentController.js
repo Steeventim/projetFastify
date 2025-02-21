@@ -1,6 +1,22 @@
 const { Document, User, Commentaire, File, Etape } = require('../models');
 
 const documentController = {
+  verifyDocumentStatus: async (document) => {
+    try {
+      const isComplete = await document.checkEtapeCompletion();
+      if (isComplete) {
+        document.status = 'verified';
+      } else {
+        document.status = document.status === 'rejected' ? 'rejected' : 'pending';
+      }
+      await document.save();
+      return document;
+    } catch (error) {
+      throw new Error(`Error verifying document status: ${error.message}`);
+    }
+  },
+
+
   forwardDocument: async (request, reply) => {
     const { documentId, userId, comments, files } = request.body;
     const transferTimestamp = new Date();
@@ -37,9 +53,9 @@ const documentController = {
 
       const etape = await Etape.findByPk(document.etapeId);
       if (etape) {
-        document.status = `In ${etape.LibelleEtape}`;
-        await document.save();
+        await verifyDocumentStatus(document);
       }
+
 
       document.transferStatus = 'sent';
       document.transferTimestamp = transferTimestamp;
@@ -79,6 +95,8 @@ const documentController = {
         document.transferTimestamp = new Date();
         await document.save();
       }
+      await verifyDocumentStatus(document);
+
 
       return reply.status(200).send(document);
     } catch (error) {

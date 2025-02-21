@@ -3,8 +3,9 @@
 module.exports = {
   up: async (queryInterface, Sequelize) => {
     await queryInterface.addColumn('Documents', 'status', {
-      type: Sequelize.STRING,
+      type: Sequelize.ENUM('verified', 'pending', 'rejected'),
       allowNull: false,
+      defaultValue: 'pending'
     });
   },
 

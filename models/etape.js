@@ -11,6 +11,15 @@ module.exports = (sequelize, DataTypes) => {
     LibelleEtape: DataTypes.STRING,
     Description: DataTypes.STRING,
     Validation: DataTypes.STRING,
+    sequenceNumber: {
+      type: DataTypes.INTEGER,
+      allowNull: false,
+      defaultValue: 1,
+      validate: {
+        min: 1
+      }
+    },
+
   });
 
   Etape.associate = (models) => {
