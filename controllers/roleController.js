@@ -1,49 +1,55 @@
 const { Role, Etape } = require('../models');
+const { v4: uuidv4 } = require('uuid'); // Import UUID for unique ID generation
 
 // Create Role
 const createRole = async (request, reply) => {
     try {
-        const { name, description, isSystemRole, etapeName, permissions } = request.body;
-
-        // Validate etapeName
-        if (!etapeName) {
-            console.error('Etape name is required in request body');
-            return reply.status(400).send({ 
-                error: 'etapeName is required',
-                details: 'Please provide a valid etapeName in the request body'
-            });
+        let roles = request.body; // Accept an array of roles
+        if (!Array.isArray(roles)) {
+            roles = [roles]; // Wrap single object in an array
         }
 
-        // Find the etape by name
-        const etape = await Etape.findOne({ where: { LibelleEtape: etapeName } });
+        const createdRoles = []; // Array to hold created roles
 
-        if (!etape) {
-            console.error(`Etape not found: ${etapeName}`);
-            return reply.status(404).send({ 
-                message: 'Etape not found',
-                details: `No etape found with name: ${etapeName}`
+        for (const roleData of roles) {
+            const { name, description, isSystemRole, etapeName, permissions } = roleData;
+
+            // Validate etapeName
+            if (!etapeName) {
+                console.error('Etape name is required in request body');
+                return reply.status(400).send({ 
+                    error: 'etapeName is required',
+                    details: 'Please provide a valid etapeName in the request body'
+                });
+            }
+
+            // Find the etape by name
+            const etape = await Etape.findOne({ where: { LibelleEtape: etapeName } });
+
+            if (!etape) {
+                console.error(`Etape not found: ${etapeName}`);
+                return reply.status(404).send({ 
+                    message: 'Etape not found',
+                    details: `No etape found with name: ${etapeName}`
+                });
+            }
+
+            const roleId = uuidv4(); // Generate a unique ID for the role
+            const [role, created] = await Role.findOrCreate({
+                where: { name },
+                defaults: { idRole: roleId, description, isSystemRole, permissions }
             });
+
+            // Update the etape with the roleId
+            await etape.update({ roleId: role.idRole });
+
+            createdRoles.push(role); // Add created role to the array
+            console.log(`Role created successfully: ${role.name}`);
         }
 
-        const roleData = {
-            name,
-            description,
-            isSystemRole,
-            permissions
-        };
-
-        const [role, created] = await Role.findOrCreate({
-            where: { name },
-            defaults: roleData
-        });
-        
-        // Update the etape with the roleId
-        await etape.update({ roleId: role.idRole });
-
-        console.log(`Role created successfully: ${role.name}`);
         reply.code(201).send({
-            ...role.toJSON(),
-            message: 'Role created successfully'
+            roles: createdRoles.map(role => role.toJSON()),
+            message: 'Roles created successfully'
         });
 
     } catch (error) {

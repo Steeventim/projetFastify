@@ -9,10 +9,6 @@ module.exports = (sequelize, DataTypes) => {
       type: DataTypes.STRING,
       allowNull: false
     },
-    content: {
-      type: DataTypes.JSON, 
-      allowNull: false
-    },
     etapeId: {
       type: DataTypes.UUID,
       allowNull: true,
@@ -26,7 +22,7 @@ module.exports = (sequelize, DataTypes) => {
       allowNull: false,
       defaultValue: 'pending',
       validate: {
-        isIn: [['verified', 'pending', 'rejected']]
+        isIn: [['indexed, verified', 'pending', 'rejected']]
       }
     },
     transferStatus: {

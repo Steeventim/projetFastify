@@ -66,109 +66,122 @@ const userController = {
 
   async createUser(request, reply) {
     try {
-      const { error, value } = User.validate(request.body);
-      
-      if (error) {
-        return reply.status(400).send({ 
-          statusCode: 400, 
-          error: 'Validation Error', 
-          message: error.details[0].message 
-        });
+      let usersData = request.body;
+      if (!Array.isArray(usersData)) {
+        usersData = [usersData];
       }
 
-      const existingUser = await User.findOne({ 
-        where: { Email: value.Email } 
-      });
+      const results = [];
 
-      if (existingUser) {
-        return reply.status(409).send({ 
-          statusCode: 409, 
-          error: 'Conflict', 
-          message: 'Email already in use' 
-        });
-      }
-
-      const newUser = await User.create(value);
-
-      // Get roles from either roles or roleNames parameter
-      const rolesParam = value.roles || value.roleNames;
-      
-      // Assign roles if provided - accepts both single role string and array of roles
-      if (rolesParam) {
-        // Convert single role to array if needed
-        const rolesToAssign = Array.isArray(rolesParam) ? rolesParam : [rolesParam];
-
-        
-        const roles = await Role.findAll({
-          where: {
-            name: rolesToAssign
+      for (const userData of usersData) {
+        try {
+          // Validate user data
+          const { error, value } = User.validate(userData);
+          if (error) {
+            results.push({
+              success: false,
+              email: userData.Email,
+              error: error.details[0].message
+            });
+            continue;
           }
-        });
 
-        // Verify all requested roles exist
-        if (roles.length !== rolesToAssign.length) {
-          const foundRoleNames = roles.map(role => role.name);
-          const missingRoles = rolesToAssign.filter(role => !foundRoleNames.includes(role));
-          
-          return reply.status(400).send({
-            statusCode: 400,
-            error: 'Bad Request',
-            message: `The following roles do not exist: ${missingRoles.join(', ')}`
+          // Check for existing user
+          const existingUser = await User.findOne({
+            where: { Email: value.Email }
+          });
+
+          if (existingUser) {
+            results.push({
+              success: false,
+              email: value.Email,
+              error: 'Email already in use'
+            });
+            continue;
+          }
+
+          // Create user
+          const newUser = await User.create({
+            ...value,
+            idUser: uuidv4()
+          });
+
+          // Handle role assignments
+          if (value.roleNames) {
+            const roleNames = Array.isArray(value.roleNames) 
+              ? value.roleNames 
+              : [value.roleNames];
+
+            for (const roleName of roleNames) {
+              // Find or create each role
+              const [role] = await Role.findOrCreate({
+                where: { name: roleName },
+                defaults: {
+                  idRole: uuidv4(),
+                  description: `${roleName} role`,
+                  isSystemRole: false
+                }
+              });
+
+              // Create user-role association
+              await UserRoles.create({
+                id: uuidv4(),
+                userId: newUser.idUser,
+                roleId: role.idRole
+              });
+            }
+          }
+
+          // Fetch the user with their roles
+          const userWithRoles = await User.findByPk(newUser.idUser, {
+            include: [{
+              model: Role,
+              through: { attributes: [] }
+            }]
+          });
+
+          // Generate token
+          const token = authMiddleware.generateToken(userWithRoles);
+
+          results.push({
+            success: true,
+            user: {
+              id: userWithRoles.idUser,
+              email: userWithRoles.Email,
+              nomUser: userWithRoles.NomUser,
+              roles: userWithRoles.Roles.map(role => role.name)
+            },
+            token
+          });
+
+        } catch (userError) {
+          console.error('Error creating individual user:', userError);
+          results.push({
+            success: false,
+            email: userData.Email,
+            error: userError.message
           });
         }
-
-        await Promise.all(roles.map(role => 
-          UserRoles.create({
-            id: uuidv4(),
-            userId: newUser.idUser,
-            roleId: role.idRole
-          })
-        ));
-      } else {
-        // Assign default 'user' role if no roles specified
-        const [userRole] = await Role.findOrCreate({
-          where: { name: 'user' },
-          defaults: {
-            idRole: uuidv4(),
-            description: 'Regular user with basic access',
-            isSystemRole: false
-          }
-        });
-
-        await UserRoles.create({
-          id: uuidv4(),
-          userId: newUser.idUser,
-          roleId: userRole.idRole
-        });
       }
 
+      const hasSuccesses = results.some(r => r.success);
+      const hasFailures = results.some(r => !r.success);
+      
+      const statusCode = hasSuccesses && hasFailures ? 207 :
+                        hasSuccesses ? 201 :
+                        400;
 
-
-      // Fetch user with roles
-      const userWithRoles = await User.findByPk(newUser.idUser, {
-        include: [{
-          model: Role,
-          through: 'UserRoles',
-          attributes: ['name']
-        }]
-      });
-
-      const token = authMiddleware.generateToken(userWithRoles);
-
-      return reply.status(201).send({
-        user: {
-          id: userWithRoles.idUser,
-          email: userWithRoles.Email,
-          roles: userWithRoles.Roles.map(role => role.name)
-        },
-        token
+      return reply.status(statusCode).send({
+        status: statusCode === 207 ? 'partial' : (statusCode === 201 ? 'success' : 'error'),
+        results
       });
 
     } catch (error) {
-      return reply.status(500).send({ 
-        statusCode: 500, 
-        error: 'Internal Server Error', 
-        message: error.message 
+      console.error('Create user error:', error);
+      return reply.status(500).send({
+        statusCode: 500,
+        error: 'Internal Server Error',
+        message: error.message
       });
     }
   },

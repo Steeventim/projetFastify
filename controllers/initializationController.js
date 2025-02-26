@@ -27,16 +27,16 @@ const initializationController = {
       });
 
       // Create admin user
-      const hashedPassword = await bcrypt.hash(password, 10);
       const adminUser = await User.create({
         idUser: uuidv4(),
         Email: email,
-        Password: hashedPassword,
+        Password: password,
         NomUser: nomUser,
         PrenomUser: prenomUser,
         Telephone: telephone,
         IsActive: true
       });
+
 
       // Associate user with role using the UserRoles model
       await UserRoles.create({

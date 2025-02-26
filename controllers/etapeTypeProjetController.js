@@ -39,5 +39,29 @@ module.exports = {
         message: error.message
       });
     }
+  },
+
+  async getAllTypeProjetsWithEtapes(req, res) {
+    try {
+      const typeProjets = await TypeProjet.findAll({
+        include: [{
+          model: Etape,
+          through: { attributes: [] } // Exclude the join table attributes
+        }]
+      });
+
+      return res.status(200).send({
+        statusCode: 200,
+        message: 'Retrieved all TypeProjets with their Etapes successfully',
+        data: typeProjets
+      });
+    } catch (error) {
+      console.error('Error retrieving TypeProjets with Etapes:', error);
+      return res.status(500).send({
+        statusCode: 500,
+        error: 'Internal Server Error',
+        message: error.message
+      });
+    }
   }
 };

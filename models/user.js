@@ -73,16 +73,24 @@ module.exports = (sequelize, DataTypes) => {
     hooks: {
       beforeCreate: async (user) => {
         const saltRounds = parseInt(process.env.PASSWORD_SALT_ROUNDS, 10) || 12;
+        console.log(`Hashing password with salt rounds: ${saltRounds}`);
         const salt = await bcrypt.genSalt(saltRounds);
+        console.log(`Generated salt: ${salt}`);
         user.Password = await bcrypt.hash(user.Password, salt);
+        console.log(`Hashed password: ${user.Password}`);
       },
+
       beforeUpdate: async (user) => {
         if (user.changed('Password')) {
           const saltRounds = parseInt(process.env.PASSWORD_SALT_ROUNDS, 10) || 12;
+          console.log(`Updating password with salt rounds: ${saltRounds}`);
           const salt = await bcrypt.genSalt(saltRounds);
+          console.log(`Generated salt: ${salt}`);
           user.Password = await bcrypt.hash(user.Password, salt);
+          console.log(`Hashed password: ${user.Password}`);
         }
       }
+
     }
   });
 
@@ -107,8 +115,13 @@ const userSchema = Joi.object({
   User.validate = (user) => userSchema.validate(user);
 
   User.prototype.comparePassword = async function(candidatePassword) {
-    return bcrypt.compare(candidatePassword, this.Password);
+    console.log(`Comparing password for user: ${this.Email}`);
+    console.log(`Stored hash: ${this.Password}`);
+    const isMatch = await bcrypt.compare(candidatePassword, this.Password);
+    console.log(`Password match: ${isMatch}`);
+    return isMatch;
   };
+
 
   User.associate = (models) => {
     User.hasMany(models.Commentaire, { foreignKey: 'userId' });

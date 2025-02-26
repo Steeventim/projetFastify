@@ -24,6 +24,17 @@ async function searchRoutes(fastify, options) {
       reply.status(500).send({ error: 'Internal Server Error' });
     }
   });
+
+  // Add wrapper for proposition search
+  fastify.get('/search-propositions/:searchTerm', async (request, reply) => {
+    try {
+      await searchController.searchPropositions(request, reply);
+      return reply;
+    } catch (error) {
+      fastify.log.error(error);
+      return reply.status(500).send({ error: 'Internal Server Error' });
+    }
+  });
 }
 
 module.exports = searchRoutes;

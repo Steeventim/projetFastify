@@ -4,7 +4,7 @@ const authMiddleware = require('../middleware/authMiddleware');
 module.exports = async function (fastify, opts) {
   // Get all etapes
   fastify.get('/etapes/all', {
-    preHandler: [authMiddleware.verifyToken, authMiddleware.requireRole(['admin'])]
+    preHandler: [authMiddleware.verifyToken, authMiddleware.requireRole(['admin', 'user'])]
   }, etapeController.getAllEtapes);
 
   // Create a new etape

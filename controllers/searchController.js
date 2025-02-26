@@ -92,6 +92,106 @@ const searchController = {
         details: error.message 
       });
     }
+  },
+
+  async searchPropositions(request, reply) {
+    const { searchTerm } = request.params;
+
+    if (!searchTerm) {
+      return reply.code(400).send({ error: 'Search term is required' });
+    }
+
+    try {
+      const apiBaseUrl = 'http://localhost:3001';
+      const searchUrl = `${apiBaseUrl}/search1Highligth/${encodeURIComponent(searchTerm)}`;
+      console.log('Searching propositions:', searchTerm);
+
+      const response = await axios({
+        method: 'get',
+        url: searchUrl,
+        timeout: 10000,
+        validateStatus: null
+      });
+
+      if (response.status !== 200) {
+        return reply.code(response.status).send({
+          error: 'Search service error',
+          details: 'Failed to get search results'
+        });
+      }
+
+      const searchResults = response.data;
+      const hits = searchResults.hits?.hits || [];
+
+      // Process and store documents
+      for (const hit of hits) {
+        const documentUrl = hit._source.url;
+        const documentName = hit._source.file?.filename;
+
+        if (documentName && documentUrl) {
+          try {
+            // Try to find existing document
+            const [document, created] = await Document.findOrCreate({
+              where: { name: documentName },
+              defaults: {
+                id: uuidv4(),
+                name: documentName,
+                url: documentUrl,
+                status: 'indexed',
+                createdAt: new Date(),
+                updatedAt: new Date()
+              }
+            });
+
+            if (created) {
+              console.log(`Stored new document: ${documentName}`);
+            } else {
+              console.log(`Document already exists: ${documentName}`);
+              // Update URL if it's different
+              if (document.url !== documentUrl) {
+                await document.update({ url: documentUrl });
+                console.log(`Updated URL for document: ${documentName}`);
+              }
+            }
+          } catch (dbError) {
+            console.error('Error storing document:', {
+              name: documentName,
+              error: dbError.message
+            });
+          }
+        }
+      }
+
+      return reply.send({
+        success: true,
+        total: searchResults.hits?.total?.value || 0,
+        hits: hits.map(hit => ({
+          ...hit,
+          _source: {
+            ...hit._source,
+            stored: true // Indicate that document is stored
+          }
+        })),
+        took: searchResults.took
+      });
+
+    } catch (error) {
+      console.error('Proposition search error:', {
+        message: error.message,
+        code: error.code
+      });
+
+      if (error.code === 'ECONNREFUSED') {
+        return reply.code(503).send({
+          error: 'Search service unavailable'
+        });
+      }
+
+      return reply.code(500).send({
+        error: 'Internal server error',
+        details: error.message
+      });
+    }
   }
 };
 
