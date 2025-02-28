@@ -1,4 +1,5 @@
-const { Document, User, Commentaire, File, Etape } = require('../models');
+const { Document, User, Commentaire, File, Etape, UserRoles } = require('../models');
+const { v4: uuidv4 } = require('uuid');
 
 const documentController = {
   verifyDocumentStatus: async (document) => {
@@ -9,7 +10,7 @@ const documentController = {
       } else {
         document.status = document.status === 'rejected' ? 'rejected' : 'pending';
       }
-      await document.save();
+      await document.save();  
       return document;
     } catch (error) {
       throw new Error(`Error verifying document status: ${error.message}`);
@@ -17,98 +18,148 @@ const documentController = {
   },
 
   forwardDocument: async (request, reply) => {
-    const { documentName, userId, comments, files, externalUrl } = request.body;
-    const transferTimestamp = new Date();
-
-    // Validate and store external URL only if it doesn't exist
-    if (externalUrl) {
-      try {
-        // Validate URL format
-        new URL(externalUrl);
-      } catch (error) {
-        return reply.status(400).send({ error: 'Invalid URL format' });
-      }
-    }
-
-    try {
-      const document = await Document.findOne({
-        where: { name: documentName },
-        include: [
-          { model: Commentaire, as: 'commentaires' },
-          { model: File, as: 'files' },
-          { model: Etape, as: 'etape' }
-        ]
+    // Extract fields from request body
+    const { 
+      documentId,
+      userId, 
+      comments, 
+      files, 
+      etapeId,
+      UserDestinatorName: providedDestinator 
+    } = request.body;
+  
+    if (!documentId || !etapeId) {
+      return reply.status(400).send({ 
+        error: 'Bad Request', 
+        message: 'Document ID and Etape ID are required' 
       });
-
-      if (!document) {
+    }
+  
+    const transferTimestamp = new Date();
+  
+    try {
+      const etape = await Etape.findByPk(etapeId);
+      if (!etape) {
         return reply.status(404).send({ 
-          error: 'Not Found',
-          message: `Document "${documentName}" not found` 
+          error: 'Not Found', 
+          message: 'Etape not found' 
         });
       }
-
+  
+      const nextEtape = await Etape.findOne({ 
+        where: { sequenceNumber: etape.sequenceNumber + 1 } 
+      });
+      let UserDestinatorName = nextEtape ? nextEtape.NomUser : null;
+  
+      // Find the document by ID
+      let document = await Document.findByPk(documentId);
+      if (!document) {
+        return reply.status(404).send({ 
+          error: 'Not Found', 
+          message: 'Document not found' 
+        });
+      }
+  
       const user = await User.findByPk(userId);
       if (!user) {
-        return reply.status(404).send({ error: 'User not found' });
+        return reply.status(404).send({ 
+          error: 'Not Found', 
+          message: 'User not found' 
+        });
       }
-
-      if (comments) {
+  
+      // Check if user's role is associated with the etape
+      const userRole = await UserRoles.findOne({ 
+        where: { 
+          userId: user.idUser, 
+          roleId: etape.roleId 
+        } 
+      });
+      
+      if (!userRole) {
+        return reply.status(403).send({ 
+          error: 'Forbidden', 
+          message: 'User does not have permission to forward this document' 
+        });
+      }
+  
+      // Add comments if any
+      if (comments && Array.isArray(comments)) {
         for (const comment of comments) {
-          await Commentaire.create({ documentId: document.id, ...comment });
+          await Commentaire.create({
+            id: uuidv4(),
+            documentId: document.idDocument,
+            userId: user.idUser,
+            content: comment.content,
+            createdAt: new Date()
+          });
         }
       }
-
-      if (files) {
-        for (const file of files) {
-          await File.create({ documentId: document.id, ...file });
-        }
+  
+      // Logic to send the document to the destinator
+      const destinatorUser = await User.findOne({ 
+        where: { NomUser: UserDestinatorName } 
+      });
+      
+      if (!destinatorUser) {
+        return reply.status(404).send({ 
+          error: 'Destinator user not found' 
+        });
       }
-
-      // Store external URL if provided and not already set
-      if (externalUrl && !document.url) {
-        document.url = externalUrl;
-        await document.save();
-      }
-
-      const etape = await Etape.findByPk(document.etapeId);
-      if (etape) {
-        await verifyDocumentStatus(document);
-      }
-
+  
+      // Update document status
       document.transferStatus = 'sent';
       document.transferTimestamp = transferTimestamp;
       await document.save();
-
-      return reply.status(200).send({ 
-        document,
-        user,
-        transferStatus: 'sent',
-        transferTimestamp
+  
+      // Get fresh document data including URL
+      const updatedDocument = await Document.findByPk(documentId, {
+        attributes: ['idDocument', 'Title', 'url', 'status', 'transferStatus', 'transferTimestamp']
       });
-
+  
+      return reply.status(200).send({ 
+        success: true,
+        destinatorUser: {
+          id: destinatorUser.idUser,
+          name: destinatorUser.NomUser
+        },
+        document: updatedDocument,
+        user: {
+          id: user.idUser,
+          name: user.NomUser
+        },
+        transferStatus: 'sent', 
+        transferTimestamp 
+      });
+  
     } catch (error) {
       console.error('Error forwarding document:', error.message);
-      return reply.status(500).send({ error: 'Error forwarding document', details: error.message });
+      return reply.status(500).send({ 
+        error: 'Error forwarding document', 
+        details: error.message 
+      });
     }
   },
-
   viewDocument: async (request, reply) => {
-    const { documentName } = request.params;
+    const { documentTitle } = request.params;
     
     try {
       const document = await Document.findOne({
-        where: { name: documentName },
+        where: { Title: documentTitle },
         include: [
           { model: Commentaire, as: 'commentaires' },
           { model: File, as: 'files' },
           { model: Etape, as: 'etape' }
         ]
+      }).catch(error => {
+        console.error('Error fetching document:', error);
+        return null; // Return null if there's an error
       });
 
       if (!document) {
         return reply.status(404).send({ 
           error: 'Not Found',
-          message: `Document "${documentName}" not found` 
+          message: `Document "${documentTitle}" not found` 
         });
       }
 
@@ -126,26 +177,129 @@ const documentController = {
     }
   },
 
-  assignEtape: async (request, reply) => {
+  getForwardedDocuments: async (request, reply) => {
     try {
-      const { documentName, etapeId } = request.body;
+      const { userId } = request.params;
 
-      if (!documentName || !etapeId) {
-        return reply.code(400).send({
-          error: 'Bad Request',
-          message: 'Document name and Etape ID are required'
+      // Find the user
+      const user = await User.findByPk(userId);
+      if (!user) {
+        return reply.status(404).send({
+          success: false,
+          error: 'User not found'
         });
       }
 
-      // Find the document by name
+      // Get user's current etape and check role
+      const userEtape = await Etape.findOne({
+        include: [{
+          model: User,
+          where: { idUser: userId }
+        }]
+      });
+
+      if (!userEtape) {
+        return reply.send({
+          success: true,
+          message: 'No etape assigned to user',
+          data: []
+        });
+      }
+
+      // Check if user has a role assigned to this etape
+      const userRole = await UserRoles.findOne({
+        where: {
+          userId: user.idUser,
+          roleId: userEtape.roleId
+        }
+      });
+
+      if (!userRole) {
+        return reply.status(403).send({
+          success: false,
+          error: 'Forbidden',
+          message: 'User does not have the required role for this etape'
+        });
+      }
+
+      // Rest of the existing document fetching logic
+      const forwardedDocuments = await Document.findAll({
+        where: {
+          transferStatus: 'sent',
+          '$Etape.sequenceNumber$': userEtape.sequenceNumber
+        },
+        include: [
+          {
+            model: Etape,
+            as: 'etape',
+            attributes: ['idEtape', 'LibelleEtape', 'sequenceNumber']
+          },
+          {
+            model: User,
+            as: 'sender',
+            attributes: ['idUser', 'NomUser', 'PrenomUser']
+          },
+          {
+            model: Commentaire,
+            as: 'comments',
+            attributes: ['id', 'content', 'createdAt'],
+            include: [{
+              model: User,
+              attributes: ['idUser', 'NomUser', 'PrenomUser']
+            }]
+          }
+        ],
+        order: [
+          ['transferTimestamp', 'DESC']
+        ]
+      });
+
+      return reply.send({
+        success: true,
+        count: forwardedDocuments.length,
+        data: forwardedDocuments.map(doc => ({
+          idDocument: doc.idDocument,
+          Title: doc.Title,
+          url: doc.url,
+          status: doc.status,
+          transferStatus: doc.transferStatus,
+          transferTimestamp: doc.transferTimestamp,
+          etape: doc.etape,
+          sender: doc.sender,
+          comments: doc.comments,
+        }))
+      });
+
+    } catch (error) {
+      console.error('Error fetching forwarded documents:', error);
+      return reply.status(500).send({
+        success: false,
+        error: 'Internal Server Error',
+        message: error.message
+      });
+    }
+  },
+
+  assignEtape: async (request, reply) => {
+    try {
+      const { documentTitle, etapeId } = request.body;
+
+      if (!documentTitle || !etapeId) {
+        return reply.code(400).send({
+          error: 'Bad Request',
+          message: 'Document title and Etape ID are required'
+        });
+      }
+
+      // Find the document by title
       const document = await Document.findOne({
-        where: { name: documentName }
+        where: { Title: documentTitle }
       });
 
       if (!document) {
         return reply.code(404).send({
           error: 'Not Found',
-          message: `Document "${documentName}" not found`
+          message: `Document "${documentTitle}" not found`
         });
       }
 
@@ -163,7 +317,7 @@ const documentController = {
 
       // Return updated document with etape information
       const updatedDocument = await Document.findOne({
-        where: { name: documentName },
+        where: { Title: documentTitle },
         include: [{
           model: Etape,
           attributes: ['id', 'name', 'description']
@@ -178,6 +332,51 @@ const documentController = {
 
     } catch (error) {
       console.error('Error assigning etape:', error);
+      return reply.code(500).send({
+        error: 'Internal Server Error',
+        message: error.message
+      });
+    }
+  },
+
+  updateDocument: async (request, reply) => {
+    try {
+      const { documentTitle } = request.params;
+      const updates = request.body;
+
+      // Find document
+      const document = await Document.findOne({
+        where: { Title: documentTitle }
+      });
+
+      if (!document) {
+        return reply.code(404).send({
+          error: 'Not Found',
+          message: `Document "${documentTitle}" not found`
+        });
+      }
+
+      // Update document
+      await document.update(updates);
+
+      // Fetch updated document with relations
+      const updatedDocument = await Document.findOne({
+        where: { Title: documentTitle },
+        include: [
+          { model: Commentaire, as: 'commentaires' },
+          { model: File, as: 'files' },
+          { model: Etape, as: 'etape' }
+        ]
+      });
+
+      return reply.send({
+        success: true,
+        message: 'Document updated successfully',
+        document: updatedDocument
+      });
+
+    } catch (error) {
+      console.error('Error updating document:', error);
       return reply.code(500).send({
         error: 'Internal Server Error',
         message: error.message

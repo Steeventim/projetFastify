@@ -3,20 +3,7 @@ const authMiddleware = require('../middleware/authMiddleware');
 
 module.exports = async function (fastify, opts) {
   fastify.post('/forward-document', { 
-    preHandler: [authMiddleware.verifyToken, authMiddleware.requireRole(['admin'])],
-    schema: {
-      body: {
-        type: 'object',
-        required: ['documentName', 'userId'],
-        properties: {
-          documentName: { type: 'string' },
-          userId: { type: 'string', format: 'uuid' },
-          comments: { type: 'array', items: { type: 'object' } },
-          files: { type: 'array', items: { type: 'object' } },
-          externalUrl: { type: 'string', format: 'uri', nullable: true }
-        }
-      }
-    }
+    preHandler: [authMiddleware.verifyToken, authMiddleware.requireRole(['admin', 'user'])],
   }, documentController.forwardDocument);
 
   fastify.get('/document/:documentName', {
@@ -49,4 +36,20 @@ module.exports = async function (fastify, opts) {
       }
     }
   }, documentController.assignEtape);
+
+  fastify.get('/forwarded-documents-get/:userId', {
+    preHandler: [
+      authMiddleware.verifyToken,
+      authMiddleware.requireRole(['admin', 'user'])
+    ],
+    schema: {
+      params: {
+        type: 'object',
+        required: ['userId'],
+        properties: {
+          userId: { type: 'string', format: 'uuid' }
+        }
+      }
+    }
+  }, documentController.getForwardedDocuments);
 };

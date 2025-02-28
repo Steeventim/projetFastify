@@ -1,11 +1,12 @@
-const { Commentaire } = require('../models');
+const { Commentaire, User } = require('../models');
 
 const commentaireController = {
   createCommentaire: async (request, reply) => {
-    const { content, userId, structureId, documentId } = request.body;
+    const { content, userId, documentId, UserDestinatorName } = request.body;
 
     try {
       const newCommentaire = await Commentaire.create({
+        UserDestinatorName, // Add UserDestinatorName to the comment
         content,
         userId,
         structureId,

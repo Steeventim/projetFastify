@@ -1,5 +1,6 @@
 const axios = require('axios');
 const { Document, Etape } = require('../models');
+const { Readable } = require('stream');
 
 const searchController = {
   searchDocumentsWithoutName: async (request, reply) => {
@@ -11,39 +12,58 @@ const searchController = {
 
     try {
       const apiBaseUrl = 'http://localhost:3001';
-      // Remove /api/ prefix and use consistent URL format
-      const searchUrl = `${apiBaseUrl}/highlightera2/${searchTerm}`;
+      const searchUrl = `${apiBaseUrl}/api/v1/pdf/highlight/${encodeURIComponent(searchTerm)}`;
       console.log('Attempting API call to:', searchUrl);
 
-      const response = await axios.get(searchUrl, { 
-        responseType: 'stream', // Set to stream for PDF
-        timeout: 10000,
+      const response = await axios({
+        method: 'get',
+        url: searchUrl,
+        responseType: 'stream',
+        timeout: 30000,
+        maxContentLength: Infinity,
+        maxBodyLength: Infinity,
         headers: {
           'Accept': 'application/pdf'
         },
-        validateStatus: null // Allow all status codes to be handled in our code
+        validateStatus: function(status) {
+          return status >= 200 && status < 500;
+        }
       });
 
-      console.log('API Response Status:', response.status);
-
       if (response.status === 404) {
-        console.log('API returned 404 - Document not found');
         return reply.code(404).send({ 
-          error: 'Document not found', 
+          error: 'Document not found',
           searchTerm 
         });
       }
 
       if (response.status !== 200) {
-        console.log(`API returned unexpected status: ${response.status}`);
-        return reply.code(response.status).send({
-          error: 'Unexpected API response'
+        return reply.code(response.status).send({ 
+          error: 'Unexpected API response',
+          status: response.status
         });
       }
 
-      // Stream PDF response
-      reply.type('application/pdf');
-      return reply.send(response.data);
+      // Set headers for streaming response
+      reply.raw.writeHead(200, {
+        'Content-Type': 'application/pdf',
+        'Content-Disposition': `attachment; filename="search-${searchTerm}.pdf"`,
+        'Transfer-Encoding': 'chunked'
+      });
+
+      // Handle stream errors
+      response.data.on('error', (err) => {
+        console.error('Stream error:', err);
+        if (!reply.sent) {
+          reply.code(500).send({ 
+            error: 'Stream error',
+            details: err.message 
+          });
+        }
+      });
+
+      // Pipe the response stream directly to the reply
+      return response.data.pipe(reply.raw);
 
     } catch (error) {
       console.error('API Call Failed:', {
@@ -74,19 +94,69 @@ const searchController = {
     }
 
     try {
-      const pdfUrl = `http://localhost:3001/highlightera2/${documentName}/${searchTerm}`;
+      const baseUrl = 'http://localhost:3001';
+      const encodedDocName = encodeURIComponent(documentName);
+      const encodedSearchTerm = encodeURIComponent(searchTerm);
+      const pdfUrl = `${baseUrl}/highlightera2/${encodedDocName}/${encodedSearchTerm}`;
       console.log('Calling external API:', pdfUrl);
 
       const response = await axios.get(pdfUrl, { 
         responseType: 'stream',
-        timeout: 10000
+        timeout: 10000,
+        headers: {
+          'Accept': 'application/pdf'
+        }
       });
 
+      // Create a properly formatted document URL
+      const documentUrl = new URL(`/documents/${encodedDocName}`, baseUrl).toString();
+
+      // Find or create document in database
+      let document = await Document.findOne({
+        where: { Title: documentName }
+      });
+
+      if (!document) {
+        document = await Document.create({
+          idDocument: uuidv4(),
+          Title: documentName,
+          url: documentUrl,
+          status: 'pending',
+          transferStatus: 'pending',
+          createdAt: new Date(),
+          updatedAt: new Date()
+        });
+      } else {
+        await document.update({
+          url: documentUrl,
+          status: 'pending',
+          updatedAt: new Date()
+        });
+      }
+
+      // Set response headers
       reply.type('application/pdf');
+      reply.header('Document-Id', document.idDocument);
+      reply.header('Document-Url', documentUrl);
+      reply.header('Document-Status', document.status);
+
       return reply.send(response.data);
 
     } catch (error) {
-      console.error('External API error:', error.message);
+      console.error('External API error:', {
+        message: error.message,
+        documentName,
+        searchTerm,
+        details: error.errors || []
+      });
+
+      if (error.name === 'SequelizeValidationError') {
+        return reply.code(400).send({ 
+          error: 'Validation Error', 
+          details: error.errors.map(e => e.message)
+        });
+      }
+
       return reply.code(503).send({ 
         error: 'External search service error', 
         details: error.message 
@@ -94,102 +164,44 @@ const searchController = {
     }
   },
 
-  async searchPropositions(request, reply) {
-    const { searchTerm } = request.params;
-
-    if (!searchTerm) {
-      return reply.code(400).send({ error: 'Search term is required' });
-    }
-
+  searchPropositions: async (request, reply) => {
     try {
-      const apiBaseUrl = 'http://localhost:3001';
-      const searchUrl = `${apiBaseUrl}/search1Highligth/${encodeURIComponent(searchTerm)}`;
-      console.log('Searching propositions:', searchTerm);
-
-      const response = await axios({
-        method: 'get',
-        url: searchUrl,
-        timeout: 10000,
-        validateStatus: null
-      });
-
-      if (response.status !== 200) {
-        return reply.code(response.status).send({
-          error: 'Search service error',
-          details: 'Failed to get search results'
+      const { searchTerm } = request.params;
+      
+      if (!searchTerm) {
+        return reply.code(400).send({
+          success: false,
+          error: 'Bad Request',
+          message: 'Search term is required'
         });
       }
 
-      const searchResults = response.data;
-      const hits = searchResults.hits?.hits || [];
+      // Define base URL and construct full URL
+      const baseUrl = 'http://localhost:3001'; // Adjust this to match your external API base URL
+      const apiUrl = `${baseUrl}/search1Highligth/${encodeURIComponent(searchTerm)}`;
 
-      // Process and store documents
-      for (const hit of hits) {
-        const documentUrl = hit._source.url;
-        const documentName = hit._source.file?.filename;
+      console.log('Calling external API:', apiUrl);
 
-        if (documentName && documentUrl) {
-          try {
-            // Try to find existing document
-            const [document, created] = await Document.findOrCreate({
-              where: { name: documentName },
-              defaults: {
-                id: uuidv4(),
-                name: documentName,
-                url: documentUrl,
-                status: 'indexed',
-                createdAt: new Date(),
-                updatedAt: new Date()
-              }
-            });
+      // Call the external API using axios instead of fetch
+      const response = await axios.get(apiUrl);
 
-            if (created) {
-              console.log(`Stored new document: ${documentName}`);
-            } else {
-              console.log(`Document already exists: ${documentName}`);
-              // Update URL if it's different
-              if (document.url !== documentUrl) {
-                await document.update({ url: documentUrl });
-                console.log(`Updated URL for document: ${documentName}`);
-              }
-            }
-          } catch (dbError) {
-            console.error('Error storing document:', {
-              name: documentName,
-              error: dbError.message
-            });
-          }
-        }
+      // Check response status
+      if (response.status !== 200) {
+        throw new Error(`External API returned status ${response.status}`);
       }
 
       return reply.send({
         success: true,
-        total: searchResults.hits?.total?.value || 0,
-        hits: hits.map(hit => ({
-          ...hit,
-          _source: {
-            ...hit._source,
-            stored: true // Indicate that document is stored
-          }
-        })),
-        took: searchResults.took
+        data: response.data,
+        searchTerm
       });
 
     } catch (error) {
-      console.error('Proposition search error:', {
-        message: error.message,
-        code: error.code
-      });
-
-      if (error.code === 'ECONNREFUSED') {
-        return reply.code(503).send({
-          error: 'Search service unavailable'
-        });
-      }
-
+      console.error('Error searching propositions:', error);
       return reply.code(500).send({
-        error: 'Internal server error',
-        details: error.message
+        success: false,
+        error: 'Internal Server Error',
+        message: error.message
       });
     }
   }

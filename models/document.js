@@ -17,12 +17,19 @@ module.exports = (sequelize, DataTypes) => {
         key: 'idEtape' // key in the target model
       }
     },
+    UserDestinatorName: {
+      type: DataTypes.STRING,
+      allowNull: true
+    },
     status: {
-      type: DataTypes.ENUM('verified', 'pending', 'rejected'),
+      type: DataTypes.STRING,
       allowNull: false,
       defaultValue: 'pending',
       validate: {
-        isIn: [['indexed, verified', 'pending', 'rejected']]
+        isIn: {
+          args: [['indexed', 'verified', 'pending', 'rejected']],
+          msg: "Status must be one of: indexed, verified, pending, rejected"
+        }
       }
     },
     transferStatus: {
@@ -37,7 +44,14 @@ module.exports = (sequelize, DataTypes) => {
       type: DataTypes.STRING,
       allowNull: true,
       validate: {
-        isUrl: true
+        isValidUrl(value) {
+          if (value === null) return; // Allow null values
+          try {
+            new URL(value);
+          } catch (error) {
+            throw new Error('URL must be a valid URL format');
+          }
+        }
       }
     }
   });

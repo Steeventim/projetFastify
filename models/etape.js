@@ -8,26 +8,42 @@ module.exports = (sequelize, DataTypes) => {
       defaultValue: DataTypes.UUIDV4,
       primaryKey: true
     },
-    LibelleEtape: DataTypes.STRING,
-    Description: DataTypes.STRING,
-    Validation: DataTypes.STRING,
-    sequenceNumber: {
-      type: DataTypes.INTEGER,
+    LibelleEtape: {
+      type: DataTypes.STRING,
       allowNull: false,
-      defaultValue: 1,
       validate: {
-        min: 1
+        notEmpty: true
       }
     },
 
+    Description: {
+      type: DataTypes.STRING,
+      allowNull: true
+    },
+    Validation: {
+      type: DataTypes.BOOLEAN,
+      defaultValue: false
+    },
+    sequenceNumber: {
+      type: DataTypes.INTEGER,
+      allowNull: false
+    }
   });
 
   Etape.associate = (models) => {
-    Etape.belongsToMany(models.TypeProjet, { through: 'EtapeTypeProjet', foreignKey: 'etapeId' });
-    Etape.hasMany(models.Document, { foreignKey: 'etapeId', as: 'documents' });
-    Etape.belongsTo(models.Role, { foreignKey: 'roleId', as: 'role' });
+    Etape.hasMany(models.Document, {
+      foreignKey: 'etapeId',
+      as: 'documents',
+      onDelete: 'SET NULL'
+    });
+    
+    Etape.belongsToMany(models.TypeProjet, {
+      through: models.EtapeTypeProjet,
+      foreignKey: 'etapeId',
+      otherKey: 'idType',
+      as: 'typeProjets'
+    });
   };
-
 
   return Etape;
 };
