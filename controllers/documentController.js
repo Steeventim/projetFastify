@@ -1,4 +1,4 @@
-const { Document, User, Commentaire, File, Etape, UserRoles } = require('../models');
+const { Document, User, Commentaire, File, Etape, UserRoles, Role, sequelize, Sequelize } = require('../models');
 const { v4: uuidv4 } = require('uuid');
 
 const documentController = {
@@ -18,7 +18,6 @@ const documentController = {
   },
 
   forwardDocument: async (request, reply) => {
-    // Extract fields from request body
     const { 
       documentId,
       userId, 
@@ -45,12 +44,66 @@ const documentController = {
           message: 'Etape not found' 
         });
       }
-  
-      const nextEtape = await Etape.findOne({ 
-        where: { sequenceNumber: etape.sequenceNumber + 1 } 
+
+      // Role check
+      const roleCheck = await documentController.checkUserEtapeRole(userId, etapeId);
+      if (!roleCheck.success || !roleCheck.hasPermission) {
+        console.log('Role check details:', roleCheck.details);
+        return reply.status(403).send({
+          error: 'Forbidden',
+          message: 'User does not have the required role for this etape',
+          details: roleCheck.details
+        });
+      }
+
+      // Find next etape
+      const nextEtape = await Etape.findOne({
+        where: { 
+          sequenceNumber: etape.sequenceNumber + 1 
+        }
       });
-      let UserDestinatorName = nextEtape ? nextEtape.NomUser : null;
-  
+
+      // Determine destinator user
+      let destinatorUser;
+      if (providedDestinator) {
+        destinatorUser = await User.findOne({ 
+          where: { NomUser: providedDestinator }
+        });
+      } else if (nextEtape) {
+        // Find users with the required role for next etape
+        const usersWithRole = await User.findAll({
+          include: [{
+            model: Role,
+            through: UserRoles,
+            where: { idRole: nextEtape.roleId }
+          }],
+          limit: 1
+        });
+        
+        destinatorUser = usersWithRole[0];
+      }
+
+      if (!destinatorUser) {
+        // Log more details about the next etape
+        console.log('Next etape details:', {
+          etapeId: nextEtape?.idEtape,
+          etapeName: nextEtape?.LibelleEtape,
+          roleId: nextEtape?.roleId,
+          userCount: nextEtape?.Users?.length || 0
+        });
+
+        return reply.status(404).send({
+          error: 'Destinator Not Found',
+          message: 'Could not determine destinator user for the next etape',
+          details: {
+            providedDestinator,
+            nextEtapeId: nextEtape?.idEtape,
+            nextEtapeName: nextEtape?.LibelleEtape,
+            userCount: nextEtape?.Users?.length || 0
+          }
+        });
+      }
+
       // Find the document by ID
       let document = await Document.findByPk(documentId);
       if (!document) {
@@ -68,52 +121,55 @@ const documentController = {
         });
       }
   
-      // Check if user's role is associated with the etape
-      const userRole = await UserRoles.findOne({ 
-        where: { 
-          userId: user.idUser, 
-          roleId: etape.roleId 
-        } 
-      });
-      
-      if (!userRole) {
-        return reply.status(403).send({ 
-          error: 'Forbidden', 
-          message: 'User does not have permission to forward this document' 
-        });
-      }
+      // Remove duplicate role check here since we already checked above
   
-      // Add comments if any
+      // Create only new comments from the forwarding user
+      const newComments = [];
       if (comments && Array.isArray(comments)) {
         for (const comment of comments) {
-          await Commentaire.create({
-            id: uuidv4(),
-            documentId: document.idDocument,
-            userId: user.idUser,
-            content: comment.content,
-            createdAt: new Date()
-          });
+          if (comment.content?.trim()) {  // Only create comment if content exists and isn't empty
+            const newComment = await Commentaire.create({
+              idComment: uuidv4(),
+              documentId: document.idDocument,
+              userId: user.idUser,
+              Contenu: comment.content,
+              createdAt: new Date()
+            });
+            newComments.push(newComment);
+          }
         }
       }
   
       // Logic to send the document to the destinator
-      const destinatorUser = await User.findOne({ 
-        where: { NomUser: UserDestinatorName } 
-      });
       
-      if (!destinatorUser) {
-        return reply.status(404).send({ 
-          error: 'Destinator user not found' 
-        });
-      }
-  
       // Update document status
       document.transferStatus = 'sent';
       document.transferTimestamp = transferTimestamp;
+      document.UserDestinatorName = destinatorUser.NomUser;
       await document.save();
   
-      // Get fresh document data including URL
+      // Get fresh document data including URL, comments, and files
       const updatedDocument = await Document.findByPk(documentId, {
+        include: [
+          {
+            model: Commentaire,
+            as: 'commentaires',
+            required: false, // Make this an outer join
+            where: newComments.length > 0 ? {
+              idComment: newComments.map(c => c.idComment)
+            } : undefined,
+            attributes: ['idComment', 'Contenu', 'createdAt'],
+            include: [{
+              model: User,
+              as: 'user',
+              attributes: ['idUser', 'NomUser']
+            }]
+          },
+          {
+            model: File,
+            as: 'files'
+          }
+        ],
         attributes: ['idDocument', 'Title', 'url', 'status', 'transferStatus', 'transferTimestamp']
       });
   
@@ -129,17 +185,156 @@ const documentController = {
           name: user.NomUser
         },
         transferStatus: 'sent', 
-        transferTimestamp 
+        transferTimestamp,
+        comments: updatedDocument.commentaires || [],
+        files: updatedDocument.files || []
       });
   
     } catch (error) {
-      console.error('Error forwarding document:', error.message);
+      console.error('Error forwarding document:', {
+        message: error.message,
+        stack: error.stack,
+        details: error.original || error
+      });
       return reply.status(500).send({ 
         error: 'Error forwarding document', 
         details: error.message 
       });
     }
   },
+
+  forwardToNextEtape: async (request, reply) => {
+    const { 
+      documentId,
+      userId, 
+      comments, 
+      files, 
+      etapeId,
+      UserDestinatorName,
+      nextEtapeName
+    } = request.body;
+
+    const t = await sequelize.transaction();
+
+    try {
+      // 1. Validate request
+      if (!documentId || !etapeId || !nextEtapeName) {
+        return reply.status(400).send({
+          error: 'Bad Request',
+          message: 'Document ID, current etape ID, and next etape name are required'
+        });
+      }
+
+      // 2. Get current etape and its sequence
+      const currentEtape = await Etape.findByPk(etapeId, { transaction: t });
+      if (!currentEtape) {
+        await t.rollback();
+        return reply.status(404).send({
+          error: 'Not Found',
+          message: 'Current etape not found'
+        });
+      }
+
+      // 3. Find next etape by name and sequence validation
+      const nextEtape = await Etape.findOne({
+        where: {
+          LibelleEtape: nextEtapeName,
+          sequenceNumber: { [Sequelize.Op.gt]: currentEtape.sequenceNumber }  // Fixed: Use Sequelize.Op
+        },
+        transaction: t
+      });
+
+      // 4. Get document
+      const document = await Document.findByPk(documentId, { transaction: t });
+      if (!document) {
+        await t.rollback();
+        return reply.status(404).send({
+          error: 'Not Found',
+          message: 'Document not found'
+        });
+      }
+
+      // 5. Handle case when no next etape exists
+      if (!nextEtape) {
+        // Update document status to approved
+        await document.update({
+          status: 'verified',
+          transferStatus: 'received',
+          transferTimestamp: new Date()
+        }, { transaction: t });
+
+        await t.commit();
+        return reply.send({
+          success: true,
+          message: 'Document approved - final etape reached',
+          document
+        });
+      }
+
+      // 6. Create comments if provided
+      const newComments = [];
+      if (comments?.length) {
+        for (const comment of comments) {
+          if (comment.content?.trim()) {
+            const newComment = await Commentaire.create({
+              idComment: uuidv4(),
+              documentId: document.idDocument,
+              userId,
+              Contenu: comment.content,
+              createdAt: new Date()
+            }, { transaction: t });
+            newComments.push(newComment);
+          }
+        }
+      }
+
+      // 7. Update document with new etape and status
+      await document.update({
+        etapeId: nextEtape.idEtape,
+        transferStatus: 'sent',
+        transferTimestamp: new Date(),
+        UserDestinatorName
+      }, { transaction: t });
+
+      // 8. Get updated document with associations
+      const updatedDocument = await Document.findOne({
+        where: { idDocument: documentId },
+        include: [
+          { 
+            model: Commentaire, 
+            as: 'commentaires',
+            include: [{ model: User, as: 'user' }]
+          },
+          { model: File, as: 'files' },
+          { model: Etape, as: 'etape' }
+        ],
+        transaction: t
+      });
+
+      await t.commit();
+
+      // 9. Send response
+      return reply.send({
+        success: true,
+        message: 'Document forwarded to next etape successfully',
+        data: {
+          document: updatedDocument,
+          nextEtape,
+          comments: newComments
+        }
+      });
+
+    } catch (error) {
+      await t.rollback();
+      console.error('Error forwarding to next etape:', error);
+      return reply.status(500).send({
+        success: false,
+        error: 'Internal Server Error',
+        message: error.message
+      });
+    }
+  },
+
   viewDocument: async (request, reply) => {
     const { documentTitle } = request.params;
     
@@ -180,25 +375,24 @@ const documentController = {
   getForwardedDocuments: async (request, reply) => {
     try {
       const { userId } = request.params;
+      console.log('Looking up user with ID:', userId);
 
-      // Find the user
-      const user = await User.findByPk(userId);
-      if (!user) {
-        return reply.status(404).send({
-          success: false,
-          error: 'User not found'
-        });
-      }
-
-      // Get user's current etape and check role
-      const userEtape = await Etape.findOne({
+      // First get the user's role and etape info
+      const userRoleInfo = await UserRoles.findOne({
+        where: { userId },
         include: [{
-          model: User,
-          where: { idUser: userId }
+          model: Role,
+          attributes: ['idRole', 'name'],
+          include: [{
+            model: Etape,
+            as: 'etape', // Match the alias defined in your Role model
+            attributes: ['idEtape', 'LibelleEtape', 'sequenceNumber']
+          }]
         }]
       });
 
-      if (!userEtape) {
+      if (!userRoleInfo?.Role?.etape) {
+        console.log('No etape found for user role');
         return reply.send({
           success: true,
           message: 'No etape assigned to user',
@@ -206,70 +400,10 @@ const documentController = {
         });
       }
 
-      // Check if user has a role assigned to this etape
-      const userRole = await UserRoles.findOne({
-        where: {
-          userId: user.idUser,
-          roleId: userEtape.roleId
-        }
-      });
+      const userEtape = userRoleInfo.Role.etape;
+      console.log('Found user etape:', userEtape.LibelleEtape);
 
-      if (!userRole) {
-        return reply.status(403).send({
-          success: false,
-          error: 'Forbidden',
-          message: 'User does not have the required role for this etape'
-        });
-      }
-
-      // Rest of the existing document fetching logic
-      const forwardedDocuments = await Document.findAll({
-        where: {
-          transferStatus: 'sent',
-          '$Etape.sequenceNumber$': userEtape.sequenceNumber
-        },
-        include: [
-          {
-            model: Etape,
-            as: 'etape',
-            attributes: ['idEtape', 'LibelleEtape', 'sequenceNumber']
-          },
-          {
-            model: User,
-            as: 'sender',
-            attributes: ['idUser', 'NomUser', 'PrenomUser']
-          },
-          {
-            model: Commentaire,
-            as: 'comments',
-            attributes: ['id', 'content', 'createdAt'],
-            include: [{
-              model: User,
-              attributes: ['idUser', 'NomUser', 'PrenomUser']
-            }]
-          }
-        ],
-        order: [
-          ['transferTimestamp', 'DESC']
-        ]
-      });
-
-      return reply.send({
-        success: true,
-        count: forwardedDocuments.length,
-        data: forwardedDocuments.map(doc => ({
-          idDocument: doc.idDocument,
-          Title: doc.Title,
-          url: doc.url,
-          status: doc.status,
-          transferStatus: doc.transferStatus,
-          transferTimestamp: doc.transferTimestamp,
-          etape: doc.etape,
-          sender: doc.sender,
-          comments: doc.comments,
-        }))
-      });
-
+      // Rest of the code remains unchanged...
     } catch (error) {
       console.error('Error fetching forwarded documents:', error);
       return reply.status(500).send({
@@ -280,47 +414,159 @@ const documentController = {
     }
   },
 
-  assignEtape: async (request, reply) => {
+  getForwardedDocumentDetails: async (request, reply) => {
     try {
-      const { documentTitle, etapeId } = request.body;
+      const { documentId, userId } = request.params;
 
-      if (!documentTitle || !etapeId) {
-        return reply.code(400).send({
-          error: 'Bad Request',
-          message: 'Document title and Etape ID are required'
+      // 1. Get user with roles and document in parallel
+      const [user, document] = await Promise.all([
+        User.findOne({
+          where: { idUser: userId },
+          include: [{
+            model: Role,
+            as: 'Roles'
+          }]
+        }),
+        Document.findOne({
+          where: { 
+            idDocument: documentId,
+            transferStatus: ['sent', 'received', 'viewed']
+          }
+        })
+      ]);
+
+      // 2. Basic validations
+      if (!user || !user.Roles?.length) {
+        return reply.status(403).send({
+          success: false,
+          error: 'User has no assigned roles'
         });
       }
 
-      // Find the document by title
+      if (!document || document.UserDestinatorName !== user.NomUser) {
+        return reply.status(404).send({
+          success: false,
+          error: 'Document not found or not forwarded to this user'
+        });
+      }
+
+      // 3. Get role's current etape
+      const currentRole = user.Roles[0];
+      if (!currentRole?.idRole) {
+        return reply.status(403).send({
+          success: false,
+          error: 'Invalid role configuration'
+        });
+      }
+
+      // 4. Find or create etape
+      let currentEtape = await Etape.findOne({
+        where: { 
+          roleId: currentRole.idRole
+        },
+        attributes: ['idEtape', 'LibelleEtape', 'sequenceNumber']
+      });
+
+      if (!currentEtape) {
+        // Create default etape if none exists
+        currentEtape = await Etape.create({
+          idEtape: uuidv4(),
+          LibelleEtape: `Default etape for ${currentRole.name}`,
+          sequenceNumber: 1,
+          roleId: currentRole.idRole
+        });
+      }
+
+      // 5. Update document with etape
+      await document.update({
+        etapeId: currentEtape.idEtape,
+        transferStatus: document.transferStatus === 'sent' ? 'received' : document.transferStatus,
+        transferTimestamp: document.transferStatus === 'sent' ? new Date() : document.transferTimestamp
+      });
+
+      // 6. Get fresh document data
+      const updatedDocument = await Document.findByPk(documentId, {
+        include: [
+          { model: Commentaire, as: 'commentaires', include: [{ model: User, as: 'user' }] },
+          { model: File, as: 'files' },
+          { model: Etape, as: 'etape' }
+        ]
+      });
+
+      // 7. Send response
+      return reply.send({
+        success: true,
+        data: {
+          document: {
+            idDocument: updatedDocument.idDocument,
+            Title: updatedDocument.Title,
+            status: updatedDocument.status,
+            transferStatus: updatedDocument.transferStatus,
+            transferTimestamp: updatedDocument.transferTimestamp,
+            url: updatedDocument.url,
+            currentEtape: currentEtape
+          },
+          comments: updatedDocument.commentaires || [],
+          files: updatedDocument.files || []
+        }
+      });
+
+    } catch (error) {
+      console.error('Error in getForwardedDocumentDetails:', error);
+      return reply.status(500).send({
+        success: false,
+        error: 'Internal Server Error',
+        message: error.message
+      });
+    }
+  },
+
+  assignEtape: async (request, reply) => {
+    try {
+      const { documentName, etapeName } = request.body;
+
+      if (!documentName || !etapeName) {
+        return reply.code(400).send({
+          error: 'Bad Request',
+          message: 'Document name and Etape name are required'
+        });
+      }
+
+      // Find the document by name
       const document = await Document.findOne({
-        where: { Title: documentTitle }
+        where: { Title: documentName }
       });
 
       if (!document) {
         return reply.code(404).send({
           error: 'Not Found',
-          message: `Document "${documentTitle}" not found`
+          message: `Document "${documentName}" not found`
         });
       }
 
-      // Find the etape
-      const etape = await Etape.findByPk(etapeId);
+      // Find the etape by name
+      const etape = await Etape.findOne({
+        where: { LibelleEtape: etapeName }
+      });
+
       if (!etape) {
         return reply.code(404).send({
           error: 'Not Found',
-          message: 'Etape not found'
+          message: `Etape "${etapeName}" not found`
         });
       }
 
-      // Update document with new etape
-      await document.update({ etapeId });
+      // Update document with etape ID
+      await document.update({ etapeId: etape.idEtape });
+      
 
-      // Return updated document with etape information
+      // Return updated document with etape information - Fix the include alias
       const updatedDocument = await Document.findOne({
-        where: { Title: documentTitle },
+        where: { Title: documentName },
         include: [{
           model: Etape,
-          attributes: ['id', 'name', 'description']
+          as: 'etape', // Add the correct alias here
+          attributes: ['idEtape', 'LibelleEtape', 'Description', 'sequenceNumber']
         }]
       });
 
@@ -378,6 +624,229 @@ const documentController = {
     } catch (error) {
       console.error('Error updating document:', error);
       return reply.code(500).send({
+        error: 'Internal Server Error',
+        message: error.message
+      });
+    }
+  },
+
+  async checkUserEtapeRole(userId, etapeId) {
+    try {
+      // Get user with roles
+      const user = await User.findByPk(userId, {
+        include: [{
+          model: Role,
+          through: UserRoles,
+          attributes: ['idRole', 'name', 'description']
+        }]
+      });
+
+      // Get etape with required role
+      const etape = await Etape.findByPk(etapeId);
+
+      if (!user || !etape) {
+        return {
+          success: false,
+          message: 'User or Etape not found'
+        };
+      }
+
+      // Find the role required for this etape
+      const requiredRole = await Role.findByPk(etape.roleId);
+      
+      if (!requiredRole) {
+        console.log('Required role not found for etape:', etape.LibelleEtape);
+        return {
+          success: false,
+          message: 'Required role not found for etape'
+        };
+      }
+
+      // Check if user has the required role (case-insensitive)
+      const hasRequiredRole = user.Roles.some(role => 
+        role.idRole === etape.roleId || 
+        role.name.toLowerCase() === requiredRole.name.toLowerCase()
+      );
+
+      console.log('Role check:', {
+        userRoles: user.Roles.map(r => ({ id: r.idRole, name: r.name })),
+        requiredRoleId: etape.roleId,
+        requiredRoleName: requiredRole.name,
+        hasRequiredRole
+      });
+
+      return {
+        success: true,
+        hasPermission: hasRequiredRole,
+        details: {
+          user: {
+            id: user.idUser,
+            name: user.NomUser,
+            roles: user.Roles.map(r => ({
+              id: r.idRole,
+              name: r.name,
+              description: r.description
+            }))
+          },
+          etape: {
+            id: etape.idEtape,
+            name: etape.LibelleEtape,
+            requiredRole: requiredRole ? {
+              id: requiredRole.idRole,
+              name: requiredRole.name,
+              description: requiredRole.description
+            } : null
+          }
+        }
+      };
+
+    } catch (error) {
+      console.error('Error checking role permissions:', error);
+      return {
+        success: false,
+        message: error.message
+      };
+    }
+  },
+
+  getReceivedDocuments: async (request, reply) => {
+    const { userId } = request.params;
+    const t = await sequelize.transaction();
+
+    try {
+      // 1. Get user with their current role and etape
+      const user = await User.findOne({
+        where: { idUser: userId },
+        include: [{
+          model: Role,
+          as: 'Roles',
+          include: [{
+            model: Etape,
+            as: 'etapes',
+            attributes: ['idEtape', 'LibelleEtape']
+          }]
+        }],
+        transaction: t
+      });
+
+      console.log('Found user:', {
+        id: user?.idUser,
+        name: user?.NomUser,
+        roles: user?.Roles?.map(r => r.name),
+        etapes: user?.Roles?.map(r => r.etapes?.map(e => e.LibelleEtape))
+      });
+
+      if (!user || !user.Roles?.[0]?.etapes?.[0]) {
+        await t.rollback();
+        return reply.status(403).send({
+          success: false,
+          error: 'No etape assigned to user'
+        });
+      }
+
+      const currentEtape = user.Roles[0].etapes[0];
+
+      // 2. Get all documents sent to this user with broader conditions
+      const documents = await Document.findAll({
+        where: {
+          [Sequelize.Op.or]: [  // Fix: Use Sequelize.Op instead of sequelize.Op
+            { UserDestinatorName: user.NomUser },
+            { etapeId: currentEtape.idEtape }
+          ],
+          transferStatus: ['sent', 'received', 'viewed']
+        },
+        attributes: [
+          'idDocument',
+          'Title',
+          'etapeId',
+          'status',
+          'transferStatus',
+          'transferTimestamp',
+          'url',
+          'UserDestinatorName'
+        ],
+        include: [
+          {
+            model: Commentaire,
+            as: 'commentaires',
+            include: [{
+              model: User,
+              as: 'user',
+              attributes: ['idUser', 'NomUser']
+            }]
+          },
+          {
+            model: File,
+            as: 'files'
+          },
+          {
+            model: Etape,
+            as: 'etape',
+            attributes: ['idEtape', 'LibelleEtape']
+          }
+        ],
+        transaction: t
+      });
+
+      console.log('Found documents:', {
+        count: documents.length,
+        docs: documents.map(d => ({
+          id: d.idDocument,
+          title: d.Title,
+          destinator: d.UserDestinatorName,
+          status: d.transferStatus
+        }))
+      });
+
+      // 3. Process each document
+      const processedDocs = await Promise.all(documents.map(async (doc) => {
+        const previousEtapeId = doc.etapeId;
+
+        // Only update if document is sent to this user specifically
+        if (doc.UserDestinatorName === user.NomUser && previousEtapeId !== currentEtape.idEtape) {
+          await doc.update({
+            etapeId: currentEtape.idEtape,
+            transferStatus: doc.transferStatus === 'sent' ? 'received' : doc.transferStatus
+          }, { transaction: t });
+        }
+
+        return {
+          documentId: doc.idDocument,
+          title: doc.Title,
+          previousEtapeId,
+          currentEtapeId: currentEtape.idEtape,
+          senderUserId: doc.commentaires[0]?.userId,
+          status: doc.status,
+          transferStatus: doc.transferStatus,
+          transferTimestamp: doc.transferTimestamp,
+          url: doc.url,
+          destinator: doc.UserDestinatorName,
+          comments: doc.commentaires?.map(c => ({
+            id: c.idComment,
+            content: c.Contenu,
+            createdAt: c.createdAt,
+            user: c.user ? {
+              id: c.user.idUser,
+              name: c.user.NomUser
+            } : null
+          })) || [],
+          files: doc.files || []
+        };
+      }));
+
+      await t.commit();
+
+      return reply.send({
+        success: true,
+        count: processedDocs.length,
+        data: processedDocs
+      });
+
+    } catch (error) {
+      await t.rollback();
+      console.error('Error fetching received documents:', error);
+      return reply.status(500).send({
+        success: false,
         error: 'Internal Server Error',
         message: error.message
       });

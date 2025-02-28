@@ -1,62 +1,87 @@
-const { Role, Etape } = require('../models');
+const { Role, Etape, sequelize } = require('../models');
 const { v4: uuidv4 } = require('uuid'); // Import UUID for unique ID generation
 
 // Create Role
 const createRole = async (request, reply) => {
-    try {
-        let roles = request.body; // Accept an array of roles
-        if (!Array.isArray(roles)) {
-            roles = [roles]; // Wrap single object in an array
-        }
+    const t = await sequelize.transaction();
 
-        const createdRoles = []; // Array to hold created roles
+    try {
+        let roles = Array.isArray(request.body) ? request.body : [request.body];
+        const createdRoles = [];
 
         for (const roleData of roles) {
             const { name, description, isSystemRole, etapeName, permissions } = roleData;
 
-            // Validate etapeName
+            // 1. Validate etapeName
             if (!etapeName) {
-                console.error('Etape name is required in request body');
+                await t.rollback();
                 return reply.status(400).send({ 
-                    error: 'etapeName is required',
-                    details: 'Please provide a valid etapeName in the request body'
+                    error: 'etapeName is required'
                 });
             }
 
-            // Find the etape by name
-            const etape = await Etape.findOne({ where: { LibelleEtape: etapeName } });
-
-            if (!etape) {
-                console.error(`Etape not found: ${etapeName}`);
-                return reply.status(404).send({ 
-                    message: 'Etape not found',
-                    details: `No etape found with name: ${etapeName}`
-                });
-            }
-
-            const roleId = uuidv4(); // Generate a unique ID for the role
-            const [role, created] = await Role.findOrCreate({
-                where: { name },
-                defaults: { idRole: roleId, description, isSystemRole, permissions }
+            // 2. Find the etape first
+            const etape = await Etape.findOne({ 
+                where: { LibelleEtape: etapeName },
+                transaction: t
             });
 
-            // Update the etape with the roleId
-            await etape.update({ roleId: role.idRole });
+            if (!etape) {
+                await t.rollback();
+                return reply.status(404).send({ 
+                    message: `Etape not found: ${etapeName}`
+                });
+            }
 
-            createdRoles.push(role); // Add created role to the array
-            console.log(`Role created successfully: ${role.name}`);
+            // 3. Create the role
+            const roleId = uuidv4();
+            const [role, created] = await Role.findOrCreate({
+                where: { name },
+                defaults: { 
+                    idRole: roleId, 
+                    description, 
+                    isSystemRole, 
+                    permissions 
+                },
+                transaction: t
+            });
+
+            // 4. Update etape with the new role ID
+            await etape.update({ 
+                roleId: role.idRole 
+            }, { 
+                transaction: t,
+                where: { idEtape: etape.idEtape }
+            });
+
+            // 5. Get fresh role data with etape
+            const roleWithEtape = await Role.findOne({
+                where: { idRole: role.idRole },
+                include: [{
+                    model: Etape,
+                    as: 'etapes',
+                    attributes: ['idEtape', 'LibelleEtape']
+                }],
+                transaction: t
+            });
+
+            createdRoles.push(roleWithEtape);
         }
 
-        reply.code(201).send({
-            roles: createdRoles.map(role => role.toJSON()),
-            message: 'Roles created successfully'
+        await t.commit();
+
+        return reply.code(201).send({
+            success: true,
+            message: `Successfully created ${createdRoles.length} role(s)`,
+            roles: createdRoles
         });
 
     } catch (error) {
+        await t.rollback();
         console.error('Error creating role:', error);
-        reply.code(400).send({ 
-            error: error.message,
-            details: 'An error occurred while processing the role creation request'
+        return reply.code(500).send({ 
+            error: 'Internal Server Error',
+            message: error.message
         });
     }
 };

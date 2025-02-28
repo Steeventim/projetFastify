@@ -116,16 +116,15 @@ const etapeController = {
   },
 
   createEtape: async (request, reply) => {
-    try {
-      // Get the current maximum sequence number
-      const maxSeq = await Etape.max('sequenceNumber') || 0;
-      console.log('Current max sequence:', maxSeq);
+    const t = await sequelize.transaction();
 
+    try {
       // Ensure we're working with an array
       const etapes = Array.isArray(request.body) ? request.body : [request.body];
       console.log('Number of etapes to create:', etapes.length);
 
       if (etapes.length === 0) {
+        await t.rollback();
         return reply.code(400).send({
           success: false,
           error: 'Bad Request',
@@ -135,52 +134,65 @@ const etapeController = {
 
       const createdEtapes = [];
 
-      // Process each etape with a new sequence number
-      for (let i = 0; i < etapes.length; i++) {
-        const etape = etapes[i];
-        console.log('Processing etape:', etape.LibelleEtape);
-
-        // Validate
-        if (!etape.LibelleEtape?.trim()) {
+      // Process each etape
+      for (const etape of etapes) {
+        if (!etape.LibelleEtape?.trim() || !etape.typeProjetLibelle) {
+          await t.rollback();
           return reply.code(400).send({
             success: false,
             error: 'Bad Request',
-            message: `Etape at position ${i} is missing LibelleEtape or it's empty`
+            message: 'Each etape must have a LibelleEtape and typeProjetLibelle'
           });
         }
 
-        // Create etape with incremented sequence
+        // Find or create TypeProjet
+        const [typeProjet] = await TypeProjet.findOrCreate({
+          where: { Libelle: etape.typeProjetLibelle },
+          defaults: {
+            idType: uuidv4(),
+            Description: `Type de projet: ${etape.typeProjetLibelle}`
+          },
+          transaction: t
+        });
+
+        // Get max sequence number for this typeProjet
+        const maxSeqEtape = await Etape.findOne({
+          include: [{
+            model: TypeProjet,
+            as: 'typeProjets',
+            where: { idType: typeProjet.idType }
+          }],
+          order: [['sequenceNumber', 'DESC']],
+          transaction: t
+        });
+
+        const nextSequence = maxSeqEtape ? maxSeqEtape.sequenceNumber + 1 : 1;
+        console.log(`Next sequence for typeProjet ${typeProjet.Libelle}:`, nextSequence);
+
+        // Create etape with calculated sequence number
         const newEtape = await Etape.create({
           idEtape: uuidv4(),
           LibelleEtape: etape.LibelleEtape,
           Description: etape.Description,
           Validation: etape.Validation,
-          sequenceNumber: maxSeq + i + 1, // Increment from max existing sequence
+          sequenceNumber: nextSequence,
           createdAt: new Date(),
           updatedAt: new Date()
-        });
+        }, { transaction: t });
 
-        // Handle TypeProjet if provided
-        if (etape.typeProjetLibelle) {
-          const [typeProjet] = await TypeProjet.findOrCreate({
-            where: { Libelle: etape.typeProjetLibelle },
-            defaults: {
-              idType: uuidv4(),
-              Description: `Type de projet: ${etape.typeProjetLibelle}`
-            }
-          });
-
-          await newEtape.addTypeProjet(typeProjet);
-          newEtape.dataValues.typeProjet = {
-            libelle: typeProjet.Libelle,
-            id: typeProjet.idType
-          };
-        }
+        // Associate with TypeProjet
+        await newEtape.addTypeProjet(typeProjet, { transaction: t });
+        newEtape.dataValues.typeProjet = {
+          libelle: typeProjet.Libelle,
+          id: typeProjet.idType
+        };
 
         createdEtapes.push(newEtape);
       }
 
+      await t.commit();
       console.log(`Created ${createdEtapes.length} etapes`);
+
       return reply.code(201).send({
         success: true,
         message: `Successfully created ${createdEtapes.length} etape(s)`,
@@ -188,6 +200,7 @@ const etapeController = {
       });
 
     } catch (error) {
+      await t.rollback();
       console.error('Error creating etapes:', error);
       return reply.code(500).send({
         success: false,

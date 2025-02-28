@@ -55,15 +55,12 @@ module.exports = (sequelize, DataTypes) => {
       foreignKey: 'roleId' 
     });
 
-
-
     // One-to-Many relationship with Etapes
     Role.hasMany(models.Etape, {
       foreignKey: 'roleId',
-      as: 'etapes'
+      as: 'etapes'  // This is the correct alias
     });
   };
-
 
   return Role;
 };

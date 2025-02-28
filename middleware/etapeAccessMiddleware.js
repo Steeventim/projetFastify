@@ -1,39 +1,61 @@
-const { Document, Role } = require('../models');
+const { Document, Role, User, Etape } = require('../models');
 
 const checkEtapeAccess = async (request, reply) => {
   try {
-    const { documentTitle } = request.body || request.params;
-    const userRoles = request.user.Roles;
+    const { documentId, userId } = request.params;
 
-    // Find document and its current etape
-    const document = await Document.findOne({
-      where: { Title: documentTitle }
-    });
+    // Get document and user with roles and etapes in parallel
+    const [document, user] = await Promise.all([
+      Document.findOne({
+        where: { idDocument: documentId },
+        include: [{
+          model: Etape,
+          as: 'etape',
+          attributes: ['idEtape', 'roleId']
+        }]
+      }),
+      User.findOne({
+        where: { idUser: userId },
+        include: [{
+          model: Role,
+          attributes: ['idRole', 'name']
+        }]
+      })
+    ]);
 
-    if (!document || !document.etapeId) {
+    if (!document || !document.etape) {
       return reply.code(404).send({
         error: 'Not Found',
         message: 'Document or etape not found'
       });
     }
 
-    // Check if any of the user's roles have access to this etape
-    const hasAccess = userRoles.some(role => role.etapeId === document.etapeId);
+    if (!user || !user.Roles) {
+      return reply.code(403).send({
+        error: 'Forbidden',
+        message: 'User not found or has no roles assigned'
+      });
+    }
+
+    // Check if any of the user's roles match the etape's required role
+    const hasAccess = user.Roles.some(role => role.idRole === document.etape.roleId);
 
     if (!hasAccess) {
       return reply.code(403).send({
         error: 'Forbidden',
-        message: 'You do not have permission to manipulate documents at this etape'
+        message: 'You do not have permission to access documents at this etape'
       });
     }
 
-    // Add etape info to request for later use
+    // Add etape info to request for controllers to use
     request.etapeInfo = {
-      etapeId: document.etapeId,
-      roles: userRoles.filter(role => role.etapeId === document.etapeId)
+      etapeId: document.etape.idEtape,
+      roleId: document.etape.roleId,
+      roles: user.Roles.filter(role => role.idRole === document.etape.roleId)
     };
 
     return true;
+
   } catch (error) {
     console.error('Etape access check error:', error);
     return reply.code(500).send({
