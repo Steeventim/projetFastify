@@ -57,12 +57,44 @@ module.exports = (sequelize, DataTypes) => {
   });
 
   Document.prototype.checkEtapeCompletion = async function() {
-    const etape = await this.getEtape();
-    if (!etape) return false;
-    
-    // Add logic here to check if all required steps are completed
-    // This is a placeholder - implement actual verification logic
-    return true;
+    try {
+      // 1. Get current etape with its TypeProjet
+      const etape = await this.getEtape({
+        include: [{
+          model: sequelize.models.TypeProjet,
+          as: 'typeProjets',
+          attributes: ['idType', 'Libelle']
+        }]
+      });
+
+      if (!etape) return false;
+
+      // 2. Get all etapes for this TypeProjet
+      const typeProjetId = etape.typeProjets[0]?.idType;
+      if (!typeProjetId) return false;
+
+      const allEtapes = await sequelize.models.Etape.findAll({
+        include: [{
+          model: sequelize.models.TypeProjet,
+          as: 'typeProjets',
+          where: { idType: typeProjetId }
+        }],
+        order: [['sequenceNumber', 'ASC']]
+      });
+
+      // 3. Check if current etape is the last one and validation status
+      const maxSequence = Math.max(...allEtapes.map(e => e.sequenceNumber));
+      const isComplete = (
+        etape.sequenceNumber === maxSequence && 
+        (!etape.Validation || this.status !== 'rejected')
+      );
+
+      return isComplete;
+
+    } catch (error) {
+      console.error('Error checking etape completion:', error);
+      return false;
+    }
   };
 
   Document.associate = (models) => {

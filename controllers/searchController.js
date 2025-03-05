@@ -121,7 +121,7 @@ const searchController = {
           idDocument: uuidv4(),
           Title: documentName,
           url: documentUrl,
-          status: 'pending',
+          status: 'indexed',
           transferStatus: 'pending',
           createdAt: new Date(),
           updatedAt: new Date()
@@ -129,7 +129,7 @@ const searchController = {
       } else {
         await document.update({
           url: documentUrl,
-          status: 'pending',
+          status: 'indexed',
           updatedAt: new Date()
         });
       }

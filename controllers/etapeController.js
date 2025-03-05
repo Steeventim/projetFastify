@@ -115,6 +115,60 @@ const etapeController = {
     }
   },
 
+  getEtapesByTypeProjet: async (request, reply) => {
+    try {
+      const { typeProjetId } = request.params;
+
+      // Validate typeProjetId
+      const typeProjet = await TypeProjet.findByPk(typeProjetId);
+      if (!typeProjet) {
+        return reply.code(404).send({
+          success: false,
+          error: 'TypeProjet not found'
+        });
+      }
+
+      // Get all etapes for this typeProjet
+      const etapes = await Etape.findAll({
+        include: [{
+          model: TypeProjet,
+          as: 'typeProjets',
+          where: { idType: typeProjetId },
+          attributes: ['idType', 'Libelle', 'Description']
+        }],
+        order: [['sequenceNumber', 'ASC']],
+        attributes: [
+          'idEtape',
+          'LibelleEtape',
+          'Description',
+          'Validation',
+          'sequenceNumber',
+          'createdAt',
+          'updatedAt'
+        ]
+      });
+
+      return reply.send({
+        success: true,
+        typeProjet: {
+          id: typeProjet.idType,
+          libelle: typeProjet.Libelle,
+          description: typeProjet.Description
+        },
+        count: etapes.length,
+        data: etapes
+      });
+
+    } catch (error) {
+      console.error('Error fetching etapes by type projet:', error);
+      return reply.code(500).send({
+        success: false,
+        error: 'Internal Server Error',
+        message: error.message
+      });
+    }
+  },
+
   createEtape: async (request, reply) => {
     const t = await sequelize.transaction();
 

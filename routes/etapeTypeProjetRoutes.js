@@ -24,4 +24,19 @@ module.exports = async function(fastify, opts) {
       }
     }
   }, etapeTypeProjetController.assignEtapeToTypeProjet);
+
+  // Get etapes by TypeProjet - Moved inside the module.exports function
+  fastify.get('/typeprojet/:typeProjetId/etapes', {
+    preHandler: [authMiddleware.verifyToken],
+    schema: {
+      params: {
+        type: 'object',
+        required: ['typeProjetId'],
+        properties: {
+          typeProjetId: { type: 'string', format: 'uuid' }
+        }
+      }
+    }
+  }, etapeTypeProjetController.getEtapesByTypeProjet);
 };
+

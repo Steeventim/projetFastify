@@ -63,4 +63,8 @@ module.exports = async function (fastify, opts) {
     },
     preHandler: [authMiddleware.verifyToken, authMiddleware.requireRole(['admin'])]
   }, etapeController.createEtape);
+
+  // Get etapes by TypeProjet
+  fastify.get('/etapes/type-projet/:typeProjetId', {
+  }, etapeController.getEtapesByTypeProjet);
 };

@@ -41,6 +41,60 @@ module.exports = {
     }
   },
 
+    async getEtapesByTypeProjet(req, res) {
+        try {
+          const { typeProjetId } = req.params;
+  
+          // Validate typeProjetId
+          const typeProjet = await TypeProjet.findByPk(typeProjetId);
+          if (!typeProjet) {
+            return res.status(404).send({
+              statusCode: 404,
+              error: 'Not Found',
+              message: 'TypeProjet not found'
+            });
+          }
+  
+          // Get all etapes associated with the specified typeProjet
+          const etapes = await Etape.findAll({
+            include: [{
+              model: TypeProjet,
+              as: 'typeProjets',
+              where: { idType: typeProjetId },
+              attributes: [] // No need to return typeProjet attributes
+            }],
+           order: [['sequenceNumber', 'ASC']],
+           attributes: [
+            'idEtape',
+            'LibelleEtape',
+            'Description',
+            'Validation',
+            'sequenceNumber',
+            'createdAt',
+            'updatedAt'
+          ]
+          });
+  
+        return res.status(200).send({
+          statusCode: 200,
+          message: `Retrieved all Etapes for TypeProjet ${typeProjet.Libelle} successfully`,
+          typeProjet: {
+            id: typeProjet.idType,
+            libelle: typeProjet.Libelle,
+            description: typeProjet.Description
+          },
+          data: etapes
+        });
+      } catch (error) {
+        console.error('Error retrieving Etapes by TypeProjet:', error);
+        return res.status(500).send({
+          statusCode: 500,
+          error: 'Internal Server Error',
+          message: error.message
+        });
+      }
+    },
+
   async getAllTypeProjetsWithEtapes(req, res) {
     try {
       const typeProjets = await TypeProjet.findAll({
