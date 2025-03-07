@@ -33,6 +33,16 @@ fastify.register(cors, {
   credentials: true
 });
 
+// Add multipart support
+fastify.register(require('@fastify/multipart'), {
+  attachFieldsToBody: true,
+  limits: {
+    fieldSize: 5242880, // 5MB
+    files: 10,
+    fileSize: 10485760 // 10MB
+  }
+});
+
 // Use a Fastify-compatible rate limiter
 fastify.register(require('@fastify/rate-limit'), {
   max: 100,

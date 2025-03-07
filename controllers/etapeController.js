@@ -1,4 +1,4 @@
-const { Etape, TypeProjet, Document, sequelize } = require('../models');
+const { Etape, TypeProjet, Document, sequelize, Sequelize } = require('../models');
 const { v4: uuidv4 } = require('uuid');
 
 const { EtapeTypeProjet } = require('../models'); // Import the EtapeTypeProjet model
@@ -99,9 +99,13 @@ const etapeController = {
 
       console.log('Formatted etapes:', formattedEtapes);
 
+      // Get total count of all etapes (add this before the return)
+      const totalEtapesCount = await Etape.count();
+
       return reply.send({
         success: true,
         count: formattedEtapes.length,
+        totalEtapes: totalEtapesCount,
         data: formattedEtapes
       });
 
@@ -161,6 +165,165 @@ const etapeController = {
 
     } catch (error) {
       console.error('Error fetching etapes by type projet:', error);
+      return reply.code(500).send({
+        success: false,
+        error: 'Internal Server Error',
+        message: error.message
+      });
+    }
+  },
+
+  getEtapeById: async (request, reply) => {
+    try {
+      const { etapeId } = request.params;
+
+      // Get current etape with its associations
+      const etape = await Etape.findOne({
+        where: { idEtape: etapeId },
+        attributes: [
+          'idEtape',
+          'LibelleEtape',
+          'Description',
+          'Validation',
+          'sequenceNumber',
+          'createdAt',
+          'updatedAt'
+        ],
+        include: [
+          {
+            model: Document,
+            as: 'documents',
+            attributes: ['idDocument', 'Title']
+          },
+          {
+            model: TypeProjet,
+            as: 'typeProjets',
+            through: 'EtapeTypeProjet',
+            attributes: ['idType', 'Libelle', 'Description']
+          }
+        ]
+      });
+
+      if (!etape) {
+        return reply.code(404).send({
+          success: false,
+          error: 'Not Found',
+          message: 'Etape not found'
+        });
+      }
+
+      // Find the next etape based on sequence number and type projet
+      const nextEtape = await Etape.findOne({
+        include: [{
+          model: TypeProjet,
+          as: 'typeProjets',
+          where: {
+            idType: {
+              [Sequelize.Op.in]: etape.typeProjets.map(tp => tp.idType)  // Fix: Use Sequelize.Op instead of sequelize.Op
+            }
+          }
+        }],
+        where: {
+          sequenceNumber: etape.sequenceNumber + 1
+        },
+        attributes: ['idEtape', 'LibelleEtape']
+      });
+
+      return reply.send({
+        success: true,
+        data: etape,
+        nextEtape: nextEtape ? {
+          idEtape: nextEtape.idEtape,
+          LibelleEtape: nextEtape.LibelleEtape
+        } : null
+      });
+
+    } catch (error) {
+      console.error('Error fetching etape:', error);
+      return reply.code(500).send({
+        success: false,
+        error: 'Internal Server Error',
+        message: error.message
+      });
+    }
+  },
+
+  getUsersOfNextEtape: async (request, reply) => {
+    try {
+      const { etapeId } = request.params;
+
+      // 1. Get current etape
+      const currentEtape = await Etape.findOne({
+        where: { idEtape: etapeId },
+        include: [{
+          model: TypeProjet,
+          as: 'typeProjets'
+        }]
+      });
+
+      if (!currentEtape) {
+        return reply.code(404).send({
+          success: false,
+          error: 'Not Found',
+          message: 'Current etape not found'
+        });
+      }
+
+      // 2. Find next etape by sequence number for the same type projet
+      const nextEtape = await Etape.findOne({
+        where: {
+          sequenceNumber: currentEtape.sequenceNumber + 1
+        },
+        include: [{
+          model: TypeProjet,
+          as: 'typeProjets',
+          where: {
+            idType: {
+              [Sequelize.Op.in]: currentEtape.typeProjets.map(tp => tp.idType)
+            }
+          }
+        }]
+      });
+
+      if (!nextEtape) {
+        return reply.send({
+          success: true,
+          message: 'No next etape found - this is the final etape',
+          data: []
+        });
+      }
+
+      // 3. Get all users with the role assigned to next etape
+      const usersWithRole = await User.findAll({
+        attributes: ['idUser', 'NomUser', 'Email'],
+        include: [{
+          model: Role,
+          where: { idRole: nextEtape.roleId },
+          attributes: ['idRole', 'name']
+        }],
+        order: [['NomUser', 'ASC']]
+      });
+
+      return reply.send({
+        success: true,
+        currentEtape: {
+          id: currentEtape.idEtape,
+          name: currentEtape.LibelleEtape
+        },
+        nextEtape: {
+          id: nextEtape.idEtape,
+          name: nextEtape.LibelleEtape,
+          userCount: usersWithRole.length,
+          users: usersWithRole.map(user => ({
+            id: user.idUser,
+            name: user.NomUser,
+            email: user.Email
+          }))
+        }
+      });
+
+    } catch (error) {
+      console.error('Error getting users of next etape:', error);
       return reply.code(500).send({
         success: false,
         error: 'Internal Server Error',
@@ -256,6 +419,74 @@ const etapeController = {
     } catch (error) {
       await t.rollback();
       console.error('Error creating etapes:', error);
+      return reply.code(500).send({
+        success: false,
+        error: 'Internal Server Error',
+        message: error.message
+      });
+    }
+  },
+
+  deleteEtape: async (request, reply) => {
+    const { etapeId } = request.params;
+    const t = await sequelize.transaction();
+
+    try {
+      // 1. Find etape with its associations
+      const etape = await Etape.findOne({
+        where: { idEtape: etapeId },
+        include: [
+          { 
+            model: Document,
+            as: 'documents'
+          },
+          {
+            model: TypeProjet,
+            as: 'typeProjets'
+          }
+        ],
+        transaction: t
+      });
+
+      if (!etape) {
+        await t.rollback();
+        return reply.code(404).send({
+          success: false,
+          error: 'Not Found',
+          message: 'Etape not found'
+        });
+      }
+
+      // 2. Check if etape has associated documents
+      if (etape.documents?.length > 0) {
+        await t.rollback();
+        return reply.code(400).send({
+          success: false,
+          error: 'Bad Request',
+          message: 'Cannot delete etape with associated documents'
+        });
+      }
+
+      // 3. Remove associations with TypeProjets
+      await etape.setTypeProjets([], { transaction: t });
+
+      // 4. Delete the etape
+      await etape.destroy({ transaction: t });
+
+      await t.commit();
+
+      return reply.send({
+        success: true,
+        message: 'Etape deleted successfully',
+        data: {
+          idEtape: etape.idEtape,
+          LibelleEtape: etape.LibelleEtape
+        }
+      });
+
+    } catch (error) {
+      await t.rollback();
+      console.error('Error deleting etape:', error);
       return reply.code(500).send({
         success: false,
         error: 'Internal Server Error',

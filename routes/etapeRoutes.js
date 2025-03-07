@@ -67,4 +67,55 @@ module.exports = async function (fastify, opts) {
   // Get etapes by TypeProjet
   fastify.get('/etapes/type-projet/:typeProjetId', {
   }, etapeController.getEtapesByTypeProjet);
+
+  // Get single etape by ID
+  fastify.get('/etapes/:etapeId', {
+    preHandler: [
+      authMiddleware.verifyToken,
+      authMiddleware.requireRole(['admin', 'user'])
+    ],
+    schema: {
+      params: {
+        type: 'object',
+        required: ['etapeId'],
+        properties: {
+          etapeId: { type: 'string', format: 'uuid' }
+        }
+      }
+    }
+  }, etapeController.getEtapeById);
+
+  // Get users of next etape
+  fastify.get('/etapes/:etapeId/next-users', {
+    preHandler: [
+      authMiddleware.verifyToken,
+      authMiddleware.requireRole(['admin', 'user'])
+    ],
+    schema: {
+      params: {
+        type: 'object',
+        required: ['etapeId'],
+        properties: {
+          etapeId: { type: 'string', format: 'uuid' }
+        }
+      }
+    }
+  }, etapeController.getUsersOfNextEtape);
+
+  // Delete etape
+  fastify.delete('/etapes/delete/:etapeId', {
+    preHandler: [
+      authMiddleware.verifyToken,
+      authMiddleware.requireRole(['admin'])
+    ],
+    schema: {
+      params: {
+        type: 'object',
+        required: ['etapeId'],
+        properties: {
+          etapeId: { type: 'string', format: 'uuid' }
+        }
+      }
+    }
+  }, etapeController.deleteEtape);
 };

@@ -851,7 +851,98 @@ const documentController = {
         message: error.message
       });
     }
-  }
+  },
+
+  approveDocument: async (request, reply) => {
+    const { 
+      documentId,
+      userId, 
+      etapeId,
+      comments,
+      files
+    } = request.body;
+
+    const t = await sequelize.transaction();
+
+    try {
+      // 1. Basic validation
+      if (!documentId || !userId || !etapeId) {
+        return reply.status(400).send({
+          error: 'Bad Request',
+          message: 'Document ID, User ID, and Etape ID are required'
+        });
+      }
+
+      // 2. Get document and check if it exists
+      const document = await Document.findByPk(documentId, { transaction: t });
+      if (!document) {
+        await t.rollback();
+        return reply.status(404).send({
+          error: 'Not Found',
+          message: 'Document not found'
+        });
+      }
+
+      // 3. Create comments if provided
+      const newComments = [];
+      if (comments?.length) {
+        for (const comment of comments) {
+          if (comment.content?.trim()) {
+            const newComment = await Commentaire.create({
+              idComment: uuidv4(),
+              documentId: document.idDocument,
+              userId,
+              Contenu: comment.content,
+              createdAt: new Date()
+            }, { transaction: t });
+            newComments.push(newComment);
+          }
+        }
+      }
+
+      // 4. Update document status
+      await document.update({
+        status: 'verified',
+        transferStatus: 'received',
+        transferTimestamp: new Date()
+      }, { transaction: t });
+
+      // 5. Get updated document with associations
+      const updatedDocument = await Document.findOne({
+        where: { idDocument: documentId },
+        include: [
+          { 
+            model: Commentaire, 
+            as: 'commentaires',
+            include: [{ model: User, as: 'user' }]
+          },
+          { model: File, as: 'files' },
+          { model: Etape, as: 'etape' }
+        ],
+        transaction: t
+      });
+
+      await t.commit();
+
+      return reply.send({
+        success: true,
+        message: 'Document approved successfully',
+        data: {
+          document: updatedDocument,
+          comments: newComments
+        }
+      });
+
+    } catch (error) {
+      await t.rollback();
+      console.error('Error approving document:', error);
+      return reply.status(500).send({
+        success: false,
+        error: 'Internal Server Error',
+        message: error.message
+      });
+    }
+  },
 };
 
 module.exports = documentController;

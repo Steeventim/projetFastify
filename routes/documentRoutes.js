@@ -73,31 +73,36 @@ module.exports = async function (fastify, opts) {
   // Add new route for forwarding to next etape
   fastify.post('/forward-to-next-etape', {
     schema: {
+      consumes: ['multipart/form-data'],
       body: {
         type: 'object',
         required: ['documentId', 'userId', 'etapeId', 'nextEtapeName'],
         properties: {
-          documentId: { type: 'string', format: 'uuid' },
-          userId: { type: 'string', format: 'uuid' },
-          etapeId: { type: 'string', format: 'uuid' },
+          documentId: { 
+            type: 'string',
+            format: 'uuid'
+          },
+          userId: { 
+            type: 'string',
+            format: 'uuid'
+          },
+          etapeId: { 
+            type: 'string',
+            format: 'uuid'
+          },
           nextEtapeName: { type: 'string' },
           UserDestinatorName: { type: 'string' },
-          comments: {
-            type: 'array',
-            items: {
-              type: 'object',
-              properties: {
-                content: { type: 'string' }
-              }
-            }
-          },
-          files: {
-            type: 'array',
-            items: {
-              type: 'object'
+          'comments.*.content': { type: 'string' },  // Handle array of comments
+          'files.*': {  // Handle array of files
+            type: 'object',
+            properties: {
+              filename: { type: 'string' },
+              mimetype: { type: 'string' },
+              encoding: { type: 'string' }
             }
           }
-        }
+        },
+        additionalProperties: true  // Allow additional properties for multipart data
       }
     },
     preHandler: [
@@ -105,6 +110,45 @@ module.exports = async function (fastify, opts) {
       authMiddleware.requireRole(['admin', 'user'])
     ]
   }, documentController.forwardToNextEtape);
+
+  // Add new route for approving document
+  fastify.post('/approve-document', {
+    schema: {
+      consumes: ['multipart/form-data'],
+      body: {
+        type: 'object',
+        required: ['documentId', 'userId', 'etapeId'],
+        properties: {
+          documentId: { 
+            type: 'string',
+            format: 'uuid'
+          },
+          userId: { 
+            type: 'string',
+            format: 'uuid'
+          },
+          etapeId: { 
+            type: 'string',
+            format: 'uuid'
+          },
+          'comments.*.content': { type: 'string' },
+          'files.*': {
+            type: 'object',
+            properties: {
+              filename: { type: 'string' },
+              mimetype: { type: 'string' },
+              encoding: { type: 'string' }
+            }
+          }
+        },
+        additionalProperties: true
+      }
+    },
+    preHandler: [
+      authMiddleware.verifyToken,
+      authMiddleware.requireRole(['admin', 'user'])
+    ]
+  }, documentController.approveDocument);
 
   // Add new route for received documents
   fastify.get('/received-documents/:userId', {
