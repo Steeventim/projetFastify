@@ -943,6 +943,95 @@ const documentController = {
       });
     }
   },
+
+  getLatestDocument: async (request, reply) => {
+    try {
+      // Find the most recent document
+      const latestDocument = await Document.findOne({
+        include: [
+          {
+            model: Commentaire,
+            as: 'commentaires',
+            include: [{
+              model: User,
+              as: 'user',
+              attributes: ['idUser', 'NomUser']
+            }]
+          },
+          {
+            model: File,
+            as: 'files'
+          },
+          {
+            model: Etape,
+            as: 'etape',
+            attributes: ['idEtape', 'LibelleEtape', 'Description', 'sequenceNumber']
+          }
+        ],
+        order: [
+          ['createdAt', 'DESC']  // Order by creation date, most recent first
+        ],
+        attributes: [
+          'idDocument',
+          'Title',
+          'status',
+          'transferStatus',
+          'transferTimestamp',
+          'url',
+          'createdAt',
+          'updatedAt'
+        ]
+      });
+
+      // Handle case where no documents exist
+      if (!latestDocument) {
+        return reply.status(404).send({
+          success: false,
+          error: 'Not Found',
+          message: 'No documents found in the database'
+        });
+      }
+
+      // Format the response
+      const formattedDocument = {
+        ...latestDocument.get({ plain: true }),
+        commentaires: latestDocument.commentaires?.map(comment => ({
+          idComment: comment.idComment,
+          Contenu: comment.Contenu,
+          createdAt: comment.createdAt,
+          user: {
+            idUser: comment.user?.idUser,
+            NomUser: comment.user?.NomUser
+          }
+        })) || [],
+        files: latestDocument.files?.map(file => ({
+          idFile: file.idFile,
+          name: file.name,
+          url: file.url
+        })) || [],
+        etape: latestDocument.etape ? {
+          idEtape: latestDocument.etape.idEtape,
+          LibelleEtape: latestDocument.etape.LibelleEtape,
+          Description: latestDocument.etape.Description,
+          sequenceNumber: latestDocument.etape.sequenceNumber
+        } : null
+      };
+
+      // Send successful response
+      return reply.send({
+        success: true,
+        data: formattedDocument
+      });
+
+    } catch (error) {
+      console.error('Error fetching latest document:', error);
+      return reply.status(500).send({
+        success: false,
+        error: 'Internal Server Error',
+        message: error.message
+      });
+    }
+  }
 };
 
 module.exports = documentController;

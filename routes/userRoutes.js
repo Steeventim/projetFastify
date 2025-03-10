@@ -3,6 +3,10 @@ const authMiddleware = require('../middleware/authMiddleware');
 const passwordResetController = require('../controllers/passwordResetController');
 
 module.exports = async function (fastify, opts) {
+  // New route to get current user information
+  fastify.get('/users/me', { 
+    preHandler: [authMiddleware.verifyToken] 
+  }, userController.getCurrentUser);
   // Public Routes
   fastify.post('/users/login', userController.login);
   fastify.post('/users/register', userController.createUser);

@@ -5,6 +5,28 @@ const bcrypt = require('bcrypt');
 const { v4: uuidv4 } = require('uuid'); 
 
 const userController = {
+  
+  async getCurrentUser(request, reply) {
+    try {
+      console.log('Requesting current user information:', request.user); // Log user information for debugging
+      const user = request.user; 
+
+      return reply.send({
+        id: user.idUser,
+        email: user.Email,
+        nomUser: user.NomUser,
+        prenomUser: user.PrenomUser,
+        roles: user.Roles ? user.Roles.map(role => role.name) : [] // Check if Roles exists
+      });
+    } catch (error) {
+      return reply.status(500).send({
+        statusCode: 500,
+        error: 'Internal Server Error',
+        message: error.message
+      });
+    }
+  },
+
   async getAllUsers(request, reply) {
     try {
       const users = await User.findAll({
