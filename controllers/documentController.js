@@ -1031,7 +1031,124 @@ const documentController = {
         message: error.message
       });
     }
-  }
+  },
+
+  rejectDocument: async (request, reply) => {
+    const t = await sequelize.transaction();
+    try {
+      const { documentId, userId, comments } = request.body;
+
+      // 1. Basic validation
+      if (!documentId || !userId) {
+        await t.rollback();
+        return reply.status(400).send({
+          success: false,
+          message: 'Document ID and User ID are required'
+        });
+      }
+
+      // 2. Get document with all its associations
+      const document = await Document.findOne({
+        where: { idDocument: documentId },
+        include: [
+          {
+            model: Commentaire,
+            as: 'commentaires',
+            include: [{ model: User, as: 'user' }],
+            order: [['createdAt', 'ASC']]
+          },
+          { model: File, as: 'files' },
+          { model: Etape, as: 'etape' }
+        ],
+        transaction: t
+      });
+
+      if (!document) {
+        await t.rollback();
+        return reply.status(404).send({
+          success: false,
+          message: 'Document not found'
+        });
+      }
+
+      // 3. Find original sender from first comment
+      const firstComment = document.commentaires[0];
+      if (!firstComment?.user) {
+        await t.rollback();
+        return reply.status(404).send({
+          success: false,
+          message: 'Cannot determine original sender'
+        });
+      }
+
+      const originalSender = firstComment.user;
+
+      // 4. Add rejection comments
+      const newComments = [];
+      if (comments?.length) {
+        for (const comment of comments) {
+          if (comment.content?.trim()) {
+            const newComment = await Commentaire.create({
+              idComment: uuidv4(),
+              documentId: document.idDocument,
+              userId,
+              Contenu: comment.content,
+              createdAt: new Date()
+            }, { transaction: t });
+            newComments.push(newComment);
+          }
+        }
+      }
+
+      // 5. Update document status
+      await document.update({
+        status: 'rejected',
+        transferStatus: 'sent',
+        transferTimestamp: new Date(),
+        UserDestinatorName: originalSender.NomUser
+      }, { transaction: t });
+
+      // 6. Get fresh document data
+      const updatedDocument = await Document.findOne({
+        where: { idDocument: documentId },
+        include: [
+          {
+            model: Commentaire,
+            as: 'commentaires',
+            include: [{ model: User, as: 'user' }]
+          },
+          { model: File, as: 'files' },
+          { model: Etape, as: 'etape' }
+        ],
+        transaction: t
+      });
+
+      await t.commit();
+
+      return reply.send({
+        success: true,
+        message: 'Document rejected and returned to sender',
+        data: {
+          document: updatedDocument,
+          returnedTo: {
+            id: originalSender.idUser,
+            name: originalSender.NomUser
+          },
+          comments: newComments,
+          files: document.files
+        }
+      });
+
+    } catch (error) {
+      await t.rollback();
+      console.error('Error rejecting document:', error);
+      return reply.status(500).send({
+        success: false,
+        error: 'Internal Server Error',
+        message: error.message
+      });
+    }
+  },
 };
 
 module.exports = documentController;

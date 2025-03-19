@@ -226,4 +226,52 @@ module.exports = async function (fastify, opts) {
       }
     }
   }, documentController.getLatestDocument);
+
+  // Add reject document route
+  fastify.post('/documents/:documentId/reject', {
+    schema: {
+      body: {
+        type: 'object',
+        required: ['userId'],
+        properties: {
+          userId: { type: 'string', format: 'uuid' },
+          comments: {
+            type: 'array',
+            items: {
+              type: 'object',
+              required: ['content'],
+              properties: {
+                content: { type: 'string', minLength: 1 }
+              }
+            }
+          }
+        }
+      },
+      response: {
+        200: {
+          type: 'object',
+          properties: {
+            success: { type: 'boolean' },
+            message: { type: 'string' },
+            data: {
+              type: 'object',
+              properties: {
+                document: { type: 'object' },
+                returnedTo: {
+                  type: 'object',
+                  properties: {
+                    id: { type: 'string' },
+                    name: { type: 'string' }
+                  }
+                },
+                comments: { type: 'array' },
+                files: { type: 'array' }
+              }
+            }
+          }
+        }
+      }
+    },
+    preHandler: [authMiddleware.verifyToken]
+  }, documentController.rejectDocument);
 };

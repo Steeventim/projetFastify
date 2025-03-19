@@ -31,4 +31,10 @@ module.exports = async function (fastify, opts) {
   fastify.delete('/users/:id', { 
     preHandler: [authMiddleware.verifyToken, authMiddleware.requireRole(['admin'])] 
   }, userController.deleteUser);
+
+  // Add refresh token route with auth middleware
+  fastify.post('/refresh-token', {
+    preHandler: [authMiddleware.verifyToken], // Add this line
+    handler: userController.refreshToken,
+  });
 };

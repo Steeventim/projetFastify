@@ -1,4 +1,4 @@
-const { Etape, TypeProjet, Document, sequelize, Sequelize } = require('../models');
+const { Etape, TypeProjet, Document, User, Role, sequelize, Sequelize } = require('../models');
 const { v4: uuidv4 } = require('uuid');
 
 const { EtapeTypeProjet } = require('../models'); // Import the EtapeTypeProjet model
@@ -252,16 +252,21 @@ const etapeController = {
     try {
       const { etapeId } = request.params;
 
-      // 1. Get current etape
+      // Debug log
+      console.log('Getting users for next etape after:', etapeId);
+
+      // 1. Get current etape with type projets
       const currentEtape = await Etape.findOne({
         where: { idEtape: etapeId },
         include: [{
           model: TypeProjet,
-          as: 'typeProjets'
+          as: 'typeProjets',
+          attributes: ['idType', 'Libelle']
         }]
       });
 
       if (!currentEtape) {
+        console.log('Current etape not found:', etapeId);
         return reply.code(404).send({
           success: false,
           error: 'Not Found',
@@ -269,7 +274,10 @@ const etapeController = {
         });
       }
 
-      // 2. Find next etape by sequence number for the same type projet
+      console.log('Current etape sequence:', currentEtape.sequenceNumber);
+      console.log('Type projets:', currentEtape.typeProjets.map(tp => tp.idType));
+
+      // 2. Find next etape
       const nextEtape = await Etape.findOne({
         where: {
           sequenceNumber: currentEtape.sequenceNumber + 1
@@ -286,39 +294,68 @@ const etapeController = {
       });
 
       if (!nextEtape) {
+        console.log('No next etape found after sequence:', currentEtape.sequenceNumber);
         return reply.send({
           success: true,
           message: 'No next etape found - this is the final etape',
-          data: []
+          data: {
+            currentEtape: {
+              id: currentEtape.idEtape,
+              name: currentEtape.LibelleEtape,
+              sequence: currentEtape.sequenceNumber
+            }
+          }
         });
       }
 
-      // 3. Get all users with the role assigned to next etape
+      console.log('Next etape found:', nextEtape.idEtape);
+
+      // 3. Get users with matching role
+      if (!nextEtape.roleId) {
+        return reply.send({
+          success: true,
+          message: 'Next etape has no role assigned',
+          data: {
+            nextEtape: {
+              id: nextEtape.idEtape,
+              name: nextEtape.LibelleEtape,
+              sequence: nextEtape.sequenceNumber
+            },
+            users: []
+          }
+        });
+      }
+
       const usersWithRole = await User.findAll({
         attributes: ['idUser', 'NomUser', 'Email'],
         include: [{
           model: Role,
-          where: { idRole: nextEtape.roleId },
-          attributes: ['idRole', 'name']
+          attributes: ['idRole', 'name'],
+          where: { idRole: nextEtape.roleId }
         }],
         order: [['NomUser', 'ASC']]
       });
 
       return reply.send({
         success: true,
-        currentEtape: {
-          id: currentEtape.idEtape,
-          name: currentEtape.LibelleEtape
-        },
-        nextEtape: {
-          id: nextEtape.idEtape,
-          name: nextEtape.LibelleEtape,
-          userCount: usersWithRole.length,
-          users: usersWithRole.map(user => ({
-            id: user.idUser,
-            name: user.NomUser,
-            email: user.Email
-          }))
+        data: {
+          currentEtape: {
+            id: currentEtape.idEtape,
+            name: currentEtape.LibelleEtape,
+            sequence: currentEtape.sequenceNumber
+          },
+          nextEtape: {
+            id: nextEtape.idEtape,
+            name: nextEtape.LibelleEtape,
+            sequence: nextEtape.sequenceNumber,
+            roleId: nextEtape.roleId,
+            userCount: usersWithRole.length,
+            users: usersWithRole.map(user => ({
+              id: user.idUser,
+              name: user.NomUser,
+              email: user.Email
+            }))
+          }
         }
       });
 
@@ -327,7 +364,8 @@ const etapeController = {
       return reply.code(500).send({
         success: false,
         error: 'Internal Server Error',
-        message: error.message
+        message: error.message,
+        stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
       });
     }
   },
@@ -488,6 +526,64 @@ const etapeController = {
       await t.rollback();
       console.error('Error deleting etape:', error);
       return reply.code(500).send({
+        success: false,
+        error: 'Internal Server Error',
+        message: error.message
+      });
+    }
+  },
+
+  getEtapesByRoleName: async (request, reply) => {
+    try {
+      const { roleName } = request.params;
+
+      // Find the role first with proper alias for etapes
+      const role = await Role.findOne({
+        where: { name: roleName },
+        include: [{
+          model: Etape,
+          as: 'etapes', // Add the correct alias here
+          attributes: [
+            'idEtape',
+            'LibelleEtape',
+            'Description',
+            'sequenceNumber',
+            'Validation'
+          ],
+          include: [{
+            model: TypeProjet,
+            as: 'typeProjets',
+            through: 'EtapeTypeProjet',
+            attributes: ['idType', 'Libelle', 'Description']
+          }]
+        }]
+      });
+
+      if (!role) {
+        return reply.status(404).send({
+          success: false,
+          error: 'Not Found',
+          message: `Role "${roleName}" not found`
+        });
+      }
+
+      // Sort etapes by sequence number
+      const sortedEtapes = role.etapes.sort((a, b) => a.sequenceNumber - b.sequenceNumber);
+
+      return reply.send({
+        success: true,
+        role: {
+          id: role.idRole,
+          name: role.name,
+          description: role.description
+        },
+        count: sortedEtapes.length,
+        data: sortedEtapes
+      });
+
+    } catch (error) {
+      console.error('Error fetching etapes by role name:', error);
+      return reply.status(500).send({
         success: false,
         error: 'Internal Server Error',
         message: error.message

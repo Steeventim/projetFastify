@@ -102,6 +102,61 @@ module.exports = async function (fastify, opts) {
     }
   }, etapeController.getUsersOfNextEtape);
 
+  // Add route to get etapes by role name
+  fastify.get('/etapes/role/:roleName', {
+    schema: {
+      params: {
+        type: 'object',
+        required: ['roleName'],
+        properties: {
+          roleName: { type: 'string' }
+        }
+      },
+      response: {
+        200: {
+          type: 'object',
+          properties: {
+            success: { type: 'boolean' },
+            role: {
+              type: 'object',
+              properties: {
+                id: { type: 'string' },
+                name: { type: 'string' },
+                description: { type: 'string' }
+              }
+            },
+            count: { type: 'number' },
+            data: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  idEtape: { type: 'string' },
+                  LibelleEtape: { type: 'string' },
+                  Description: { type: 'string' },
+                  sequenceNumber: { type: 'number' },
+                  Validation: { type: 'boolean' },
+                  typeProjets: {
+                    type: 'array',
+                    items: {
+                      type: 'object',
+                      properties: {
+                        idType: { type: 'string' },
+                        Libelle: { type: 'string' },
+                        Description: { type: 'string' }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    preHandler: [authMiddleware.verifyToken]
+  }, etapeController.getEtapesByRoleName);
+
   // Delete etape
   fastify.delete('/etapes/delete/:etapeId', {
     preHandler: [

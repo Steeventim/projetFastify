@@ -214,6 +214,7 @@ const userController = {
       console.log('Login attempt for email:', Email);
   
       // Find user with roles
+      
       const user = await User.findOne({
         where: { Email },
         include: [{
@@ -442,6 +443,81 @@ const userController = {
         statusCode: 500, 
         error: 'Internal Server Error', 
         message: error.message 
+      });
+    }
+  },
+
+  refreshToken: async (request, reply) => {
+    if (!request.user) {
+      console.error('User information is not available in the request.');
+      return reply.status(401).send({
+        success: false,
+        error: 'Unauthorized',
+        message: 'User information is missing'
+      });
+    }
+
+    try {
+      const { idUser } = request.user; // Get user ID from request.user
+
+      console.log('Refreshing token for user ID:', idUser); // Log user ID for debugging
+
+
+      // Get fresh user data with roles
+      const user = await User.findOne({
+        where: { idUser: idUser },
+
+        include: [{
+          model: Role,
+          through: 'UserRoles',
+          attributes: ['idRole', 'name', 'description', 'isSystemRole']
+        }],
+        attributes: ['idUser', 'Email', 'NomUser', 'PrenomUser', 'LastLogin']
+      });
+
+      if (!user) {
+        return reply.status(401).send({
+          success: false,
+          error: 'Unauthorized',
+          message: 'User not found'
+        });
+      }
+
+      const userRoles = user.Roles.map(role => ({
+        id: role.idRole,
+        name: role.name,
+        description: role.description,
+        isSystemRole: role.isSystemRole
+      }));
+
+      // Generate new token
+      const token = authMiddleware.generateToken({
+        idUser: user.idUser,
+        Email: user.Email,
+        Roles: userRoles,
+        isSuperAdmin: userRoles.some(role => role.name === 'superadmin')
+      });
+
+      return reply.send({
+        success: true,
+        token,
+        user: {
+          id: user.idUser,
+          email: user.Email,
+          nomUser: user.NomUser,
+          prenomUser: user.PrenomUser,
+          lastLogin: user.LastLogin,
+          isSuperAdmin: userRoles.some(role => role.name === 'superadmin'),
+          roles: userRoles
+        }
+      });
+
+    } catch (error) {
+      console.error('Token refresh error:', error);
+      return reply.status(500).send({
+        success: false,
+        error: 'Internal Server Error',
+        message: error.message
       });
     }
   }

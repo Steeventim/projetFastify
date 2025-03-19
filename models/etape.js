@@ -33,6 +33,7 @@ module.exports = (sequelize, DataTypes) => {
   Etape.associate = (models) => {
     Etape.hasMany(models.Document, {
       foreignKey: 'etapeId',
+      sourceKey: 'idEtape',  // Add this line to explicitly define the source key
       as: 'documents',
       onDelete: 'SET NULL'
     });

@@ -15,7 +15,17 @@ const authMiddleware = {
         });
       }
 
-      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      let decoded;
+      try {
+        decoded = jwt.verify(token, process.env.JWT_SECRET);
+      } catch (error) {
+        // Special handling for refresh token endpoint
+        if (request.url === '/refresh-token' && error.name === 'TokenExpiredError') {
+          decoded = jwt.decode(token);
+        } else {
+          throw error;
+        }
+      }
       
       // Fetch user with roles
       const user = await User.findOne({
@@ -41,7 +51,8 @@ const authMiddleware = {
 
       // Attach user info to request
       request.user = {
-        idUser: user.idUser,
+        idUser: user.idUser, // Make sure we use the correct property name
+        id: user.idUser,     // Add this for compatibility
         Email: user.Email,
         NomUser: user.NomUser,
         PrenomUser: user.PrenomUser,
@@ -51,10 +62,9 @@ const authMiddleware = {
       };
 
       // Debug logging
-      console.log('User email:', user.Email);
-      console.log('User roles:', request.user.roles);
-      console.log('Is admin:', isAdmin);
-      console.log('Is superadmin:', isSuperAdmin);
+      console.log('Token decoded:', decoded);
+      console.log('User ID from token:', decoded.id);
+      console.log('User ID in request:', request.user.idUser);
 
     } catch (error) {
       console.error('Token verification error:', error);
@@ -93,12 +103,27 @@ const authMiddleware = {
         console.log('User roles:', userRoles);
         console.log('Allowed roles:', allowedRoles);
         
-        // Allow access if user is admin, superadmin, or has any of the allowed roles
-        const hasPermission = userRoles.some(userRole => 
-          userRole.name === 'admin' || 
-          userRole.name === 'superadmin' || 
-          allowedRoles.includes(userRole.name)
-        );
+        // New permission logic:
+        const hasPermission = userRoles.some(userRole => {
+          // Allow if admin or superadmin
+          if (userRole.name === 'admin' || userRole.name === 'superadmin') {
+            return true;
+          }
+          
+          // Allow if role matches and either:
+          // 1. Role is in allowed roles regardless of isSystemRole
+          // 2. Role has isSystemRole: false
+          if (allowedRoles.includes(userRole.name)) {
+            return true;
+          }
+
+          // Always allow non-system roles that match allowed roles
+          if (!userRole.isSystemRole && allowedRoles.includes('user')) {
+            return true;
+          }
+
+          return false;
+        });
         
         console.log('Has permission:', hasPermission);
   
@@ -161,7 +186,8 @@ const authMiddleware = {
     
     return jwt.sign(
       { 
-        id: user.idUser, 
+        id: user.idUser,      // Make sure we use the correct property name
+        idUser: user.idUser,  // Add this for compatibility
         email: user.Email,
         roles: user.Roles?.map(role => ({
           name: role.name,
