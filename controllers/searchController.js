@@ -1,6 +1,7 @@
 const axios = require('axios');
 const { Document, Etape } = require('../models');
 const { Readable } = require('stream');
+const { v4: uuidv4 } = require('uuid');  // Add this import
 
 const searchController = {
   searchDocumentsWithoutName: async (request, reply) => {
@@ -97,69 +98,95 @@ const searchController = {
       const baseUrl = 'http://localhost:3001';
       const encodedDocName = encodeURIComponent(documentName);
       const encodedSearchTerm = encodeURIComponent(searchTerm);
+
+      // Get highlighted PDF first
       const pdfUrl = `${baseUrl}/highlightera2/${encodedDocName}/${encodedSearchTerm}`;
       console.log('Calling external API:', pdfUrl);
 
-      const response = await axios.get(pdfUrl, { 
-        responseType: 'stream',
-        timeout: 10000,
-        headers: {
-          'Accept': 'application/pdf'
+      try {
+        const response = await axios.get(pdfUrl, { 
+          responseType: 'stream',
+          timeout: 10000,
+          headers: {
+            'Accept': 'application/pdf'
+          },
+          // Add validation for response status
+          validateStatus: function(status) {
+            return status >= 200 && status < 500;
+          }
+        });
+
+        if (response.status === 404) {
+          return reply.code(404).send({ 
+            success: false,
+            error: 'Not Found',
+            message: 'Document not found or search term not found in document',
+            details: {
+              documentName,
+              searchTerm
+            }
+          });
         }
-      });
 
-      // Create a properly formatted document URL
-      const documentUrl = new URL(`/documents/${encodedDocName}`, baseUrl).toString();
-
-      // Find or create document in database
-      let document = await Document.findOne({
-        where: { Title: documentName }
-      });
-
-      if (!document) {
-        document = await Document.create({
-          idDocument: uuidv4(),
-          Title: documentName,
-          url: documentUrl,
-          status: 'indexed',
-          transferStatus: 'pending',
-          createdAt: new Date(),
-          updatedAt: new Date()
+        // Modify URL construction to include search term
+        const documentUrl = new URL(`/documents/${encodedDocName}/search/${encodedSearchTerm}`, baseUrl).toString();
+        
+        // Find or create document
+        let document = await Document.findOne({
+          where: { url: documentUrl }
         });
-      } else {
-        await document.update({
-          url: documentUrl,
-          status: 'indexed',
-          updatedAt: new Date()
+
+        if (!document) {
+          document = await Document.create({
+            idDocument: uuidv4(),  // Now this will work
+            Title: documentName,
+            url: documentUrl,
+            status: 'indexed',
+            transferStatus: 'pending',
+            createdAt: new Date(),
+            updatedAt: new Date()
+          });
+        }
+
+        // Set response headers
+        reply.type('application/pdf');
+        reply.header('Document-Id', document.idDocument);
+        reply.header('Document-Url', documentUrl);
+        reply.header('Document-Status', document.status);
+
+        return reply.send(response.data);
+
+      } catch (apiError) {
+        console.error('External API error:', {
+          url: pdfUrl,
+          status: apiError.response?.status,
+          message: apiError.message
         });
+
+        if (apiError.response?.status === 404) {
+          return reply.code(404).send({
+            success: false,
+            error: 'Not Found',
+            message: 'Document not found in external service'
+          });
+        }
+
+        throw apiError; // Re-throw for general error handling
       }
 
-      // Set response headers
-      reply.type('application/pdf');
-      reply.header('Document-Id', document.idDocument);
-      reply.header('Document-Url', documentUrl);
-      reply.header('Document-Status', document.status);
-
-      return reply.send(response.data);
-
     } catch (error) {
-      console.error('External API error:', {
+      console.error('Search error:', {
         message: error.message,
         documentName,
         searchTerm,
-        details: error.errors || []
+        stack: error.stack
       });
 
-      if (error.name === 'SequelizeValidationError') {
-        return reply.code(400).send({ 
-          error: 'Validation Error', 
-          details: error.errors.map(e => e.message)
-        });
-      }
-
       return reply.code(503).send({ 
-        error: 'External search service error', 
-        details: error.message 
+        success: false,
+        error: 'Search Service Error',
+        message: 'Unable to process search request',
+        details: error.message
       });
     }
   },

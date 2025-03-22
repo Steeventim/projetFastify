@@ -11,10 +11,11 @@ module.exports = async function (fastify, opts) {
     schema: {
       body: {
         type: 'object',
-        required: ['etapeName', 'documentName'],
+        required: ['etapeName', 'documentId'],
         properties: {
           etapeName: { type: 'string' },
-          documentName: { type: 'string' }
+          documentId: { type: 'string', format: 'uuid' },
+          typeProjetLibelle: { type: 'string' }
         }
       }
     }
@@ -61,7 +62,7 @@ module.exports = async function (fastify, opts) {
         ]
       }
     },
-    preHandler: [authMiddleware.verifyToken, authMiddleware.requireRole(['admin'])]
+    preHandler: [authMiddleware.verifyToken, authMiddleware.requireRole(['admin'])],
   }, etapeController.createEtape);
 
   // Get etapes by TypeProjet

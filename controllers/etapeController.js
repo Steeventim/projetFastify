@@ -5,17 +5,12 @@ const { EtapeTypeProjet } = require('../models'); // Import the EtapeTypeProjet 
 
 const etapeController = {
   affectEtapeToDocument: async (request, reply) => {
-  // Add logic to associate etape with typeProjet
-
     try {
-      const { etapeName, documentName, typeProjetLibelle } = request.body; // Include typeProjetLibelle
+      const { etapeName, documentId, typeProjetLibelle } = request.body;
 
-
-      // Find the etape and document by their names
+      // Find the etape and document by ID
       const etape = await Etape.findOne({ where: { LibelleEtape: etapeName } });
-
-      const document = await Document.findOne({ where: { Title: documentName } });
-
+      const document = await Document.findByPk(documentId);
 
       if (!etape || !document) {
         return reply.code(404).send({
@@ -25,13 +20,22 @@ const etapeController = {
       }
 
       // Update the document to associate it with the etape
-      document.etapeId = etape.id; // Assuming there's an etapeId field in the Document model
+      document.etapeId = etape.idEtape; // Use correct property name
       await document.save();
+
+      // Get updated document with etape information
+      const updatedDocument = await Document.findByPk(documentId, {
+        include: [{
+          model: Etape,
+          as: 'etape',
+          attributes: ['idEtape', 'LibelleEtape', 'Description']
+        }]
+      });
 
       return reply.send({
         success: true,
         message: 'Etape associated with Document successfully',
-        data: document
+        data: updatedDocument
       });
     } catch (error) {
       console.error('Error affecting etape to document:', error);
@@ -42,7 +46,6 @@ const etapeController = {
       });
     }
   },
- 
 
   getAllEtapes: async (request, reply) => {
     try {
