@@ -37,9 +37,9 @@ module.exports = {
     let userId;
 
     if (existingUser.length === 0) {
-      // Create the superadmin user if it doesn't exist
+      // Create the superadmin user with a compliant password
       userId = uuidv4();
-      const hashedPassword = await bcrypt.hash('mkounga10', 10);
+      const hashedPassword = await bcrypt.hash('SuperAdmin@2025!', 10); // Updated password that meets requirements
       
       await queryInterface.bulkInsert('Users', [{
         idUser: userId,

@@ -52,7 +52,7 @@ module.exports = (sequelize, DataTypes) => {
 
     Telephone: {
       type: DataTypes.STRING,
-      allowNull: false,
+      allowNull: true,
       validate: {
         is: {
           args: /^[+]?[(]?[0-9]{3}[)]?[-\s.]?[0-9]{3}[-\s.]?[0-9]{4,6}$/,
@@ -98,7 +98,15 @@ const userSchema = Joi.object({
     NomUser: Joi.string().min(2).max(50).required(),
     PrenomUser: Joi.string().min(2).max(50).optional(),
     Email: Joi.string().email().required(),
-    Password: passwordComplexity().required(),
+    Password: passwordComplexity({
+      min: 8,
+      max: 30,
+      lowerCase: 1,
+      upperCase: 1,
+      numeric: 1,
+      symbol: 1,
+      requirementCount: 4,
+    }).required(),
     Telephone: Joi.string()
       .pattern(new RegExp('^[+]?[(]?[0-9]{3}[)]?[-\s.]?[0-9]{3}[-\s.]?[0-9]{4,6}$'))
       .message('Invalid phone number format')

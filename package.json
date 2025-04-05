@@ -34,6 +34,14 @@
   },
   "scripts": {
     "test": "jest",
-    "dev": "nodemon server.js"
+    "dev": "nodemon server.js",
+    "migrate": "npx sequelize-cli db:migrate",
+    "migrate:undo": "npx sequelize-cli db:migrate:undo",
+    "migrate:undo:all": "sequelize-cli db:migrate:undo:all",
+    "seed": "sequelize-cli db:seed:all",
+    "seed:undo:all": "sequelize-cli db:seed:undo:all",
+    "migrate:fresh": "node scripts/runMigrations.js",
+    "migrate:status": "sequelize-cli db:migrate:status",
+    "migrate:specific": "npx sequelize-cli db:migrate --name"
   }
 }

@@ -7,7 +7,7 @@ module.exports = (sequelize, DataTypes) => {
     },
     Title: {
       type: DataTypes.STRING,
-      allowNull: false
+      allowNull: true
     },
     etapeId: {
       type: DataTypes.UUID,
