@@ -1,4 +1,4 @@
-const { Commentaire, User } = require('../models');
+const { Commentaire, User } = require("../models");
 
 const commentaireController = {
   createCommentaire: async (request, reply) => {
@@ -10,7 +10,7 @@ const commentaireController = {
         content,
         userId,
         structureId,
-        documentId
+        documentId,
       });
 
       return reply.status(201).send(newCommentaire);
@@ -30,10 +30,10 @@ const commentaireController = {
       );
 
       if (!updated) {
-        return reply.status(404).send({ error: 'Commentaire not found' });
+        return reply.status(404).send({ error: "Commentaire not found" });
       }
 
-      return reply.send({ message: 'Commentaire updated successfully' });
+      return reply.send({ message: "Commentaire updated successfully" });
     } catch (error) {
       return reply.status(500).send({ error: error.message });
     }
@@ -46,14 +46,14 @@ const commentaireController = {
       const deleted = await Commentaire.destroy({ where: { idCommentaire } });
 
       if (!deleted) {
-        return reply.status(404).send({ error: 'Commentaire not found' });
+        return reply.status(404).send({ error: "Commentaire not found" });
       }
 
       return reply.status(204).send(); // No content
     } catch (error) {
       return reply.status(500).send({ error: error.message });
     }
-  }
+  },
 };
 
 module.exports = commentaireController;

@@ -1,44 +1,48 @@
 module.exports = (sequelize, DataTypes) => {
-  const Document = sequelize.define('Document', {
+  const Document = sequelize.define("Document", {
     idDocument: {
       type: DataTypes.UUID,
       defaultValue: DataTypes.UUIDV4,
-      primaryKey: true
+      primaryKey: true,
     },
     Title: {
       type: DataTypes.STRING,
+<<<<<<< Updated upstream
       allowNull: false
+=======
+      allowNull: true,
+>>>>>>> Stashed changes
     },
     etapeId: {
       type: DataTypes.UUID,
       allowNull: true,
       references: {
-        model: 'Etape', // name of the target model
-        key: 'idEtape' // key in the target model
-      }
+        model: "Etape", // name of the target model
+        key: "idEtape", // key in the target model
+      },
     },
     UserDestinatorName: {
       type: DataTypes.STRING,
-      allowNull: true
+      allowNull: true,
     },
     status: {
       type: DataTypes.STRING,
       allowNull: false,
-      defaultValue: 'pending',
+      defaultValue: "pending",
       validate: {
         isIn: {
-          args: [['indexed', 'verified', 'pending', 'rejected']],
-          msg: "Status must be one of: indexed, verified, pending, rejected"
-        }
-      }
+          args: [["indexed", "verified", "pending", "rejected"]],
+          msg: "Status must be one of: indexed, verified, pending, rejected",
+        },
+      },
     },
     transferStatus: {
-      type: DataTypes.ENUM('pending', 'sent', 'received', 'viewed'),
-      defaultValue: 'pending'
+      type: DataTypes.ENUM("pending", "sent", "received", "viewed"),
+      defaultValue: "pending",
     },
     transferTimestamp: {
       type: DataTypes.DATE,
-      allowNull: true
+      allowNull: true,
     },
     url: {
       type: DataTypes.STRING,
@@ -49,22 +53,24 @@ module.exports = (sequelize, DataTypes) => {
           try {
             new URL(value);
           } catch (error) {
-            throw new Error('URL must be a valid URL format');
+            throw new Error("URL must be a valid URL format");
           }
-        }
-      }
-    }
+        },
+      },
+    },
   });
 
-  Document.prototype.checkEtapeCompletion = async function() {
+  Document.prototype.checkEtapeCompletion = async function () {
     try {
       // 1. Get current etape with its TypeProjet
       const etape = await this.getEtape({
-        include: [{
-          model: sequelize.models.TypeProjet,
-          as: 'typeProjets',
-          attributes: ['idType', 'Libelle']
-        }]
+        include: [
+          {
+            model: sequelize.models.TypeProjet,
+            as: "typeProjets",
+            attributes: ["idType", "Libelle"],
+          },
+        ],
       });
 
       if (!etape) return false;
@@ -74,43 +80,43 @@ module.exports = (sequelize, DataTypes) => {
       if (!typeProjetId) return false;
 
       const allEtapes = await sequelize.models.Etape.findAll({
-        include: [{
-          model: sequelize.models.TypeProjet,
-          as: 'typeProjets',
-          where: { idType: typeProjetId }
-        }],
-        order: [['sequenceNumber', 'ASC']]
+        include: [
+          {
+            model: sequelize.models.TypeProjet,
+            as: "typeProjets",
+            where: { idType: typeProjetId },
+          },
+        ],
+        order: [["sequenceNumber", "ASC"]],
       });
 
       // 3. Check if current etape is the last one and validation status
-      const maxSequence = Math.max(...allEtapes.map(e => e.sequenceNumber));
-      const isComplete = (
-        etape.sequenceNumber === maxSequence && 
-        (!etape.Validation || this.status !== 'rejected')
-      );
+      const maxSequence = Math.max(...allEtapes.map((e) => e.sequenceNumber));
+      const isComplete =
+        etape.sequenceNumber === maxSequence &&
+        (!etape.Validation || this.status !== "rejected");
 
       return isComplete;
-
     } catch (error) {
-      console.error('Error checking etape completion:', error);
+      console.error("Error checking etape completion:", error);
       return false;
     }
   };
 
   Document.associate = (models) => {
-    Document.hasMany(models.Commentaire, { 
-      foreignKey: 'documentId', 
-      as: 'commentaires',
-      onDelete: 'CASCADE'
+    Document.hasMany(models.Commentaire, {
+      foreignKey: "documentId",
+      as: "commentaires",
+      onDelete: "CASCADE",
     });
-    Document.hasMany(models.File, { 
-      foreignKey: 'documentId', 
-      as: 'files',
-      onDelete: 'CASCADE'
+    Document.hasMany(models.File, {
+      foreignKey: "documentId",
+      as: "files",
+      onDelete: "CASCADE",
     });
     Document.belongsTo(models.Etape, {
-      foreignKey: 'etapeId',
-      as: 'etape'
+      foreignKey: "etapeId",
+      as: "etape",
     });
   };
 

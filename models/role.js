@@ -1,34 +1,33 @@
-const Joi = require('joi');
-const { v4: uuidv4 } = require('uuid');
+const Joi = require("joi");
+const { v4: uuidv4 } = require("uuid");
 
 module.exports = (sequelize, DataTypes) => {
-  const Role = sequelize.define('Role', {
+  const Role = sequelize.define("Role", {
     idRole: {
       type: DataTypes.UUID,
       defaultValue: DataTypes.UUIDV4,
-      primaryKey: true
+      primaryKey: true,
     },
     name: {
       type: DataTypes.STRING,
       allowNull: false,
       unique: true,
       validate: {
-        notEmpty: { msg: 'Role name cannot be empty' }
-      }
+        notEmpty: { msg: "Role name cannot be empty" },
+      },
     },
     description: {
       type: DataTypes.TEXT,
-      allowNull: true
+      allowNull: true,
     },
     isSystemRole: {
       type: DataTypes.BOOLEAN,
-      defaultValue: false
+      defaultValue: false,
     },
     permissions: {
       type: DataTypes.ARRAY(DataTypes.STRING),
-      allowNull: true
-    }
-
+      allowNull: true,
+    },
   });
 
   const roleSchema = Joi.object({
@@ -38,27 +37,27 @@ module.exports = (sequelize, DataTypes) => {
       .max(50)
       .pattern(/^[a-zA-Z_]+$/)
       .messages({
-        'string.pattern.base': 'Role name must contain only letters and underscores'
+        "string.pattern.base":
+          "Role name must contain only letters and underscores",
       }),
     description: Joi.string().optional().max(255),
     isSystemRole: Joi.boolean().optional(),
-    permissions: Joi.array().items(Joi.string()).optional()
-
+    permissions: Joi.array().items(Joi.string()).optional(),
   });
 
   Role.validate = (role) => roleSchema.validate(role);
 
   Role.associate = (models) => {
     // Many-to-Many relationship with Users
-    Role.belongsToMany(models.User, { 
-      through: 'UserRoles', 
-      foreignKey: 'roleId' 
+    Role.belongsToMany(models.User, {
+      through: "UserRoles",
+      foreignKey: "roleId",
     });
 
     // One-to-Many relationship with Etapes
     Role.hasMany(models.Etape, {
-      foreignKey: 'roleId',
-      as: 'etapes'  // This is the correct alias
+      foreignKey: "roleId",
+      as: "etapes", // This is the correct alias
     });
   };
 

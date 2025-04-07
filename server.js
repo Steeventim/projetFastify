@@ -74,6 +74,33 @@ const start = async () => {
     console.log(`Server is running on port ${process.env.PORT || 3003}`);
   } catch (err) {
     console.error('Error starting server:', err); // Add detailed error logging
+    // Ensure database connection first
+    await db.sequelize.authenticate();
+    console.log("Database connection established");
+
+    // Then start server
+    await fastify.ready();
+    await fastify.listen({
+      port: process.env.PORT ? parseInt(process.env.PORT) : 3003,
+      host: process.env.HOST || "localhost",
+    });
+
+    const address = fastify.server.address();
+    if (address && typeof address !== "string") {
+      console.log("Server listening at:", {
+        port: address.port,
+        host: address.address,
+        protocol: "http",
+      });
+    } else if (typeof address === "string") {
+      console.log("Server listening at:", address);
+    } else {
+      console.error(
+        "Failed to retrieve server address. The server might not be listening."
+      );
+    }
+  } catch (err) {
+    console.error("Error starting server:", err); // Add detailed error logging
     process.exit(1);
   }
 };
