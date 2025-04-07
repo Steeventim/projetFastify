@@ -12,7 +12,7 @@ const searchController = {
     }
 
     try {
-      const apiBaseUrl = 'http://localhost:3001';
+      const apiBaseUrl = 'http://localhost:3000';
       const searchUrl = `${apiBaseUrl}/api/v1/pdf/highlight/${encodeURIComponent(searchTerm)}`;
       console.log('Attempting API call to:', searchUrl);
 
@@ -95,7 +95,7 @@ const searchController = {
     }
 
     try {
-      const baseUrl = 'http://localhost:3001';
+      const baseUrl = 'http://localhost:3000';
       const encodedDocName = encodeURIComponent(documentName);
       const encodedSearchTerm = encodeURIComponent(searchTerm);
 
@@ -204,7 +204,7 @@ const searchController = {
       }
 
       // Define base URL and construct full URL
-      const baseUrl = 'http://localhost:3001'; // Adjust this to match your external API base URL
+      const baseUrl = 'http://localhost:3000'; // Adjust this to match your external API base URL
       const apiUrl = `${baseUrl}/search1Highligth/${encodeURIComponent(searchTerm)}`;
 
       console.log('Calling external API:', apiUrl);

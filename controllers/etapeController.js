@@ -1,7 +1,15 @@
-const { Etape, TypeProjet, Document, User, Role, sequelize, Sequelize } = require('../models');
-const { v4: uuidv4 } = require('uuid');
+const {
+  Etape,
+  TypeProjet,
+  Document,
+  User,
+  Role,
+  sequelize,
+  Sequelize,
+} = require("../models");
+const { v4: uuidv4 } = require("uuid");
 
-const { EtapeTypeProjet } = require('../models'); // Import the EtapeTypeProjet model
+const { EtapeTypeProjet } = require("../models"); // Import the EtapeTypeProjet model
 
 const etapeController = {
   affectEtapeToDocument: async (request, reply) => {
@@ -15,7 +23,7 @@ const etapeController = {
       if (!etape || !document) {
         return reply.code(404).send({
           success: false,
-          message: 'Etape or Document not found'
+          message: "Etape or Document not found",
         });
       }
 
@@ -25,24 +33,26 @@ const etapeController = {
 
       // Get updated document with etape information
       const updatedDocument = await Document.findByPk(documentId, {
-        include: [{
-          model: Etape,
-          as: 'etape',
-          attributes: ['idEtape', 'LibelleEtape', 'Description']
-        }]
+        include: [
+          {
+            model: Etape,
+            as: "etape",
+            attributes: ["idEtape", "LibelleEtape", "Description"],
+          },
+        ],
       });
 
       return reply.send({
         success: true,
-        message: 'Etape associated with Document successfully',
-        data: updatedDocument
+        message: "Etape associated with Document successfully",
+        data: updatedDocument,
       });
     } catch (error) {
-      console.error('Error affecting etape to document:', error);
+      console.error("Error affecting etape to document:", error);
       return reply.code(500).send({
         success: false,
-        error: 'Internal Server Error',
-        message: error.message
+        error: "Internal Server Error",
+        message: error.message,
       });
     }
   },
@@ -51,34 +61,37 @@ const etapeController = {
     try {
       const etapes = await Etape.findAll({
         attributes: [
-          'idEtape',
-          'LibelleEtape',
-          'Description',
-          'Validation',
-          'sequenceNumber',
-          'createdAt',
-          'updatedAt'
+          "idEtape",
+          "LibelleEtape",
+          "Description",
+          "Validation",
+          "sequenceNumber",
+          "createdAt",
+          "updatedAt",
         ],
         include: [
           {
             model: Document,
-            as: 'documents',
-            attributes: ['idDocument', 'Title']
+            as: "documents",
+            attributes: ["idDocument", "Title"],
           },
           {
             model: TypeProjet,
-            as: 'typeProjets',
-            through: 'EtapeTypeProjet',
-            attributes: ['idType', 'Libelle', 'Description']
-          }
+            as: "typeProjets",
+            through: "EtapeTypeProjet",
+            attributes: ["idType", "Libelle", "Description"],
+          },
         ],
-        order: [['sequenceNumber', 'ASC']]
+        order: [["sequenceNumber", "ASC"]],
       });
 
-      console.log('Retrieved etapes:', etapes.map(etape => etape.get({ plain: true })));
+      console.log(
+        "Retrieved etapes:",
+        etapes.map((etape) => etape.get({ plain: true }))
+      );
 
       // Transform the data to plain objects and ensure all properties are included
-      const formattedEtapes = etapes.map(etape => {
+      const formattedEtapes = etapes.map((etape) => {
         const plainEtape = etape.get({ plain: true });
         return {
           idEtape: plainEtape.idEtape,
@@ -88,19 +101,23 @@ const etapeController = {
           sequenceNumber: plainEtape.sequenceNumber,
           createdAt: plainEtape.createdAt,
           updatedAt: plainEtape.updatedAt,
-          documents: plainEtape.documents ? plainEtape.documents.map(doc => ({
-            idDocument: doc.idDocument,
-            Title: doc.Title
-          })) : [],
-          typeProjets: plainEtape.typeProjets ? plainEtape.typeProjets.map(tp => ({
-            idType: tp.idType,
-            Libelle: tp.Libelle,
-            Description: tp.Description
-          })) : []
+          documents: plainEtape.documents
+            ? plainEtape.documents.map((doc) => ({
+                idDocument: doc.idDocument,
+                Title: doc.Title,
+              }))
+            : [],
+          typeProjets: plainEtape.typeProjets
+            ? plainEtape.typeProjets.map((tp) => ({
+                idType: tp.idType,
+                Libelle: tp.Libelle,
+                Description: tp.Description,
+              }))
+            : [],
         };
       });
 
-      console.log('Formatted etapes:', formattedEtapes);
+      console.log("Formatted etapes:", formattedEtapes);
 
       // Get total count of all etapes (add this before the return)
       const totalEtapesCount = await Etape.count();
@@ -109,15 +126,14 @@ const etapeController = {
         success: true,
         count: formattedEtapes.length,
         totalEtapes: totalEtapesCount,
-        data: formattedEtapes
+        data: formattedEtapes,
       });
-
     } catch (error) {
-      console.error('Error fetching etapes:', error);
+      console.error("Error fetching etapes:", error);
       return reply.code(500).send({
         success: false,
-        error: 'Internal Server Error',
-        message: error.message
+        error: "Internal Server Error",
+        message: error.message,
       });
     }
   },
@@ -131,28 +147,30 @@ const etapeController = {
       if (!typeProjet) {
         return reply.code(404).send({
           success: false,
-          error: 'TypeProjet not found'
+          error: "TypeProjet not found",
         });
       }
 
       // Get all etapes for this typeProjet
       const etapes = await Etape.findAll({
-        include: [{
-          model: TypeProjet,
-          as: 'typeProjets',
-          where: { idType: typeProjetId },
-          attributes: ['idType', 'Libelle', 'Description']
-        }],
-        order: [['sequenceNumber', 'ASC']],
+        include: [
+          {
+            model: TypeProjet,
+            as: "typeProjets",
+            where: { idType: typeProjetId },
+            attributes: ["idType", "Libelle", "Description"],
+          },
+        ],
+        order: [["sequenceNumber", "ASC"]],
         attributes: [
-          'idEtape',
-          'LibelleEtape',
-          'Description',
-          'Validation',
-          'sequenceNumber',
-          'createdAt',
-          'updatedAt'
-        ]
+          "idEtape",
+          "LibelleEtape",
+          "Description",
+          "Validation",
+          "sequenceNumber",
+          "createdAt",
+          "updatedAt",
+        ],
       });
 
       return reply.send({
@@ -160,18 +178,17 @@ const etapeController = {
         typeProjet: {
           id: typeProjet.idType,
           libelle: typeProjet.Libelle,
-          description: typeProjet.Description
+          description: typeProjet.Description,
         },
         count: etapes.length,
-        data: etapes
+        data: etapes,
       });
-
     } catch (error) {
-      console.error('Error fetching etapes by type projet:', error);
+      console.error("Error fetching etapes by type projet:", error);
       return reply.code(500).send({
         success: false,
-        error: 'Internal Server Error',
-        message: error.message
+        error: "Internal Server Error",
+        message: error.message,
       });
     }
   },
@@ -184,69 +201,72 @@ const etapeController = {
       const etape = await Etape.findOne({
         where: { idEtape: etapeId },
         attributes: [
-          'idEtape',
-          'LibelleEtape',
-          'Description',
-          'Validation',
-          'sequenceNumber',
-          'createdAt',
-          'updatedAt'
+          "idEtape",
+          "LibelleEtape",
+          "Description",
+          "Validation",
+          "sequenceNumber",
+          "createdAt",
+          "updatedAt",
         ],
         include: [
           {
             model: Document,
-            as: 'documents',
-            attributes: ['idDocument', 'Title']
+            as: "documents",
+            attributes: ["idDocument", "Title"],
           },
           {
             model: TypeProjet,
-            as: 'typeProjets',
-            through: 'EtapeTypeProjet',
-            attributes: ['idType', 'Libelle', 'Description']
-          }
-        ]
+            as: "typeProjets",
+            through: "EtapeTypeProjet",
+            attributes: ["idType", "Libelle", "Description"],
+          },
+        ],
       });
 
       if (!etape) {
         return reply.code(404).send({
           success: false,
-          error: 'Not Found',
-          message: 'Etape not found'
+          error: "Not Found",
+          message: "Etape not found",
         });
       }
 
       // Find the next etape based on sequence number and type projet
       const nextEtape = await Etape.findOne({
-        include: [{
-          model: TypeProjet,
-          as: 'typeProjets',
-          where: {
-            idType: {
-              [Sequelize.Op.in]: etape.typeProjets.map(tp => tp.idType)  // Fix: Use Sequelize.Op instead of sequelize.Op
-            }
-          }
-        }],
+        include: [
+          {
+            model: TypeProjet,
+            as: "typeProjets",
+            where: {
+              idType: {
+                [Sequelize.Op.in]: etape.typeProjets.map((tp) => tp.idType), // Fix: Use Sequelize.Op instead of sequelize.Op
+              },
+            },
+          },
+        ],
         where: {
-          sequenceNumber: etape.sequenceNumber + 1
+          sequenceNumber: etape.sequenceNumber + 1,
         },
-        attributes: ['idEtape', 'LibelleEtape']
+        attributes: ["idEtape", "LibelleEtape"],
       });
 
       return reply.send({
         success: true,
         data: etape,
-        nextEtape: nextEtape ? {
-          idEtape: nextEtape.idEtape,
-          LibelleEtape: nextEtape.LibelleEtape
-        } : null
+        nextEtape: nextEtape
+          ? {
+              idEtape: nextEtape.idEtape,
+              LibelleEtape: nextEtape.LibelleEtape,
+            }
+          : null,
       });
-
     } catch (error) {
-      console.error('Error fetching etape:', error);
+      console.error("Error fetching etape:", error);
       return reply.code(500).send({
         success: false,
-        error: 'Internal Server Error',
-        message: error.message
+        error: "Internal Server Error",
+        message: error.message,
       });
     }
   },
@@ -256,87 +276,101 @@ const etapeController = {
       const { etapeId } = request.params;
 
       // Debug log
-      console.log('Getting users for next etape after:', etapeId);
+      console.log("Getting users for next etape after:", etapeId);
 
       // 1. Get current etape with type projets
       const currentEtape = await Etape.findOne({
         where: { idEtape: etapeId },
-        include: [{
-          model: TypeProjet,
-          as: 'typeProjets',
-          attributes: ['idType', 'Libelle']
-        }]
+        include: [
+          {
+            model: TypeProjet,
+            as: "typeProjets",
+            attributes: ["idType", "Libelle"],
+          },
+        ],
       });
 
       if (!currentEtape) {
-        console.log('Current etape not found:', etapeId);
+        console.log("Current etape not found:", etapeId);
         return reply.code(404).send({
           success: false,
-          error: 'Not Found',
-          message: 'Current etape not found'
+          error: "Not Found",
+          message: "Current etape not found",
         });
       }
 
-      console.log('Current etape sequence:', currentEtape.sequenceNumber);
-      console.log('Type projets:', currentEtape.typeProjets.map(tp => tp.idType));
+      console.log("Current etape sequence:", currentEtape.sequenceNumber);
+      console.log(
+        "Type projets:",
+        currentEtape.typeProjets.map((tp) => tp.idType)
+      );
 
       // 2. Find next etape
       const nextEtape = await Etape.findOne({
         where: {
-          sequenceNumber: currentEtape.sequenceNumber + 1
+          sequenceNumber: currentEtape.sequenceNumber + 1,
         },
-        include: [{
-          model: TypeProjet,
-          as: 'typeProjets',
-          where: {
-            idType: {
-              [Sequelize.Op.in]: currentEtape.typeProjets.map(tp => tp.idType)
-            }
-          }
-        }]
+        include: [
+          {
+            model: TypeProjet,
+            as: "typeProjets",
+            where: {
+              idType: {
+                [Sequelize.Op.in]: currentEtape.typeProjets.map(
+                  (tp) => tp.idType
+                ),
+              },
+            },
+          },
+        ],
       });
 
       if (!nextEtape) {
-        console.log('No next etape found after sequence:', currentEtape.sequenceNumber);
+        console.log(
+          "No next etape found after sequence:",
+          currentEtape.sequenceNumber
+        );
         return reply.send({
           success: true,
-          message: 'No next etape found - this is the final etape',
+          message: "No next etape found - this is the final etape",
           data: {
             currentEtape: {
               id: currentEtape.idEtape,
               name: currentEtape.LibelleEtape,
-              sequence: currentEtape.sequenceNumber
-            }
-          }
+              sequence: currentEtape.sequenceNumber,
+            },
+          },
         });
       }
 
-      console.log('Next etape found:', nextEtape.idEtape);
+      console.log("Next etape found:", nextEtape.idEtape);
 
       // 3. Get users with matching role
       if (!nextEtape.roleId) {
         return reply.send({
           success: true,
-          message: 'Next etape has no role assigned',
+          message: "Next etape has no role assigned",
           data: {
             nextEtape: {
               id: nextEtape.idEtape,
               name: nextEtape.LibelleEtape,
-              sequence: nextEtape.sequenceNumber
+              sequence: nextEtape.sequenceNumber,
             },
-            users: []
-          }
+            users: [],
+          },
         });
       }
 
       const usersWithRole = await User.findAll({
-        attributes: ['idUser', 'NomUser', 'Email'],
-        include: [{
-          model: Role,
-          attributes: ['idRole', 'name'],
-          where: { idRole: nextEtape.roleId }
-        }],
-        order: [['NomUser', 'ASC']]
+        attributes: ["idUser", "NomUser", "Email"],
+        include: [
+          {
+            model: Role,
+            attributes: ["idRole", "name"],
+            where: { idRole: nextEtape.roleId },
+          },
+        ],
+        order: [["NomUser", "ASC"]],
       });
 
       return reply.send({
@@ -345,7 +379,7 @@ const etapeController = {
           currentEtape: {
             id: currentEtape.idEtape,
             name: currentEtape.LibelleEtape,
-            sequence: currentEtape.sequenceNumber
+            sequence: currentEtape.sequenceNumber,
           },
           nextEtape: {
             id: nextEtape.idEtape,
@@ -353,22 +387,21 @@ const etapeController = {
             sequence: nextEtape.sequenceNumber,
             roleId: nextEtape.roleId,
             userCount: usersWithRole.length,
-            users: usersWithRole.map(user => ({
+            users: usersWithRole.map((user) => ({
               id: user.idUser,
               name: user.NomUser,
-              email: user.Email
-            }))
-          }
-        }
+              email: user.Email,
+            })),
+          },
+        },
       });
-
     } catch (error) {
-      console.error('Error getting users of next etape:', error);
+      console.error("Error getting users of next etape:", error);
       return reply.code(500).send({
         success: false,
-        error: 'Internal Server Error',
+        error: "Internal Server Error",
         message: error.message,
-        stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+        stack: process.env.NODE_ENV === "development" ? error.stack : undefined,
       });
     }
   },
@@ -378,15 +411,17 @@ const etapeController = {
 
     try {
       // Ensure we're working with an array
-      const etapes = Array.isArray(request.body) ? request.body : [request.body];
-      console.log('Number of etapes to create:', etapes.length);
+      const etapes = Array.isArray(request.body)
+        ? request.body
+        : [request.body];
+      console.log("Number of etapes to create:", etapes.length);
 
       if (etapes.length === 0) {
         await t.rollback();
         return reply.code(400).send({
           success: false,
-          error: 'Bad Request',
-          message: 'At least one etape is required'
+          error: "Bad Request",
+          message: "At least one etape is required",
         });
       }
 
@@ -398,8 +433,9 @@ const etapeController = {
           await t.rollback();
           return reply.code(400).send({
             success: false,
-            error: 'Bad Request',
-            message: 'Each etape must have a LibelleEtape and typeProjetLibelle'
+            error: "Bad Request",
+            message:
+              "Each etape must have a LibelleEtape and typeProjetLibelle",
           });
         }
 
@@ -408,41 +444,49 @@ const etapeController = {
           where: { Libelle: etape.typeProjetLibelle },
           defaults: {
             idType: uuidv4(),
-            Description: `Type de projet: ${etape.typeProjetLibelle}`
+            Description: `Type de projet: ${etape.typeProjetLibelle}`,
           },
-          transaction: t
+          transaction: t,
         });
 
         // Get max sequence number for this typeProjet
         const maxSeqEtape = await Etape.findOne({
-          include: [{
-            model: TypeProjet,
-            as: 'typeProjets',
-            where: { idType: typeProjet.idType }
-          }],
-          order: [['sequenceNumber', 'DESC']],
-          transaction: t
+          include: [
+            {
+              model: TypeProjet,
+              as: "typeProjets",
+              where: { idType: typeProjet.idType },
+            },
+          ],
+          order: [["sequenceNumber", "DESC"]],
+          transaction: t,
         });
 
         const nextSequence = maxSeqEtape ? maxSeqEtape.sequenceNumber + 1 : 1;
-        console.log(`Next sequence for typeProjet ${typeProjet.Libelle}:`, nextSequence);
+        console.log(
+          `Next sequence for typeProjet ${typeProjet.Libelle}:`,
+          nextSequence
+        );
 
         // Create etape with calculated sequence number
-        const newEtape = await Etape.create({
-          idEtape: uuidv4(),
-          LibelleEtape: etape.LibelleEtape,
-          Description: etape.Description,
-          Validation: etape.Validation,
-          sequenceNumber: nextSequence,
-          createdAt: new Date(),
-          updatedAt: new Date()
-        }, { transaction: t });
+        const newEtape = await Etape.create(
+          {
+            idEtape: uuidv4(),
+            LibelleEtape: etape.LibelleEtape,
+            Description: etape.Description,
+            Validation: etape.Validation,
+            sequenceNumber: nextSequence,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          },
+          { transaction: t }
+        );
 
         // Associate with TypeProjet
         await newEtape.addTypeProjet(typeProjet, { transaction: t });
         newEtape.dataValues.typeProjet = {
           libelle: typeProjet.Libelle,
-          id: typeProjet.idType
+          id: typeProjet.idType,
         };
 
         createdEtapes.push(newEtape);
@@ -454,16 +498,15 @@ const etapeController = {
       return reply.code(201).send({
         success: true,
         message: `Successfully created ${createdEtapes.length} etape(s)`,
-        data: createdEtapes
+        data: createdEtapes,
       });
-
     } catch (error) {
       await t.rollback();
-      console.error('Error creating etapes:', error);
+      console.error("Error creating etapes:", error);
       return reply.code(500).send({
         success: false,
-        error: 'Internal Server Error',
-        message: error.message
+        error: "Internal Server Error",
+        message: error.message,
       });
     }
   },
@@ -477,24 +520,24 @@ const etapeController = {
       const etape = await Etape.findOne({
         where: { idEtape: etapeId },
         include: [
-          { 
+          {
             model: Document,
-            as: 'documents'
+            as: "documents",
           },
           {
             model: TypeProjet,
-            as: 'typeProjets'
-          }
+            as: "typeProjets",
+          },
         ],
-        transaction: t
+        transaction: t,
       });
 
       if (!etape) {
         await t.rollback();
         return reply.code(404).send({
           success: false,
-          error: 'Not Found',
-          message: 'Etape not found'
+          error: "Not Found",
+          message: "Etape not found",
         });
       }
 
@@ -503,8 +546,8 @@ const etapeController = {
         await t.rollback();
         return reply.code(400).send({
           success: false,
-          error: 'Bad Request',
-          message: 'Cannot delete etape with associated documents'
+          error: "Bad Request",
+          message: "Cannot delete etape with associated documents",
         });
       }
 
@@ -518,20 +561,19 @@ const etapeController = {
 
       return reply.send({
         success: true,
-        message: 'Etape deleted successfully',
+        message: "Etape deleted successfully",
         data: {
           idEtape: etape.idEtape,
-          LibelleEtape: etape.LibelleEtape
-        }
+          LibelleEtape: etape.LibelleEtape,
+        },
       });
-
     } catch (error) {
       await t.rollback();
-      console.error('Error deleting etape:', error);
+      console.error("Error deleting etape:", error);
       return reply.code(500).send({
         success: false,
-        error: 'Internal Server Error',
-        message: error.message
+        error: "Internal Server Error",
+        message: error.message,
       });
     }
   },
@@ -540,59 +582,109 @@ const etapeController = {
     try {
       const { roleName } = request.params;
 
-      // Find the role first with proper alias for etapes
+      // Trouver le rôle avec les étapes associées
       const role = await Role.findOne({
         where: { name: roleName },
-        include: [{
-          model: Etape,
-          as: 'etapes', // Add the correct alias here
-          attributes: [
-            'idEtape',
-            'LibelleEtape',
-            'Description',
-            'sequenceNumber',
-            'Validation'
-          ],
-          include: [{
-            model: TypeProjet,
-            as: 'typeProjets',
-            through: 'EtapeTypeProjet',
-            attributes: ['idType', 'Libelle', 'Description']
-          }]
-        }]
+        include: [
+          {
+            model: Etape,
+            as: "etapes",
+            attributes: [
+              "idEtape",
+              "LibelleEtape",
+              "Description",
+              "sequenceNumber",
+              "Validation",
+            ],
+            include: [
+              {
+                model: TypeProjet,
+                as: "typeProjets",
+                through: "EtapeTypeProjet",
+                attributes: ["idType", "Libelle", "Description"],
+              },
+              {
+                model: Document,
+                as: "documents",
+                attributes: ["idDocument", "transferStatus"],
+              },
+            ],
+          },
+        ],
       });
 
       if (!role) {
         return reply.status(404).send({
           success: false,
-          error: 'Not Found',
-          message: `Role "${roleName}" not found`
+          error: "Not Found",
+          message: `Role "${roleName}" not found`,
         });
       }
 
-      // Sort etapes by sequence number
-      const sortedEtapes = role.etapes.sort((a, b) => a.sequenceNumber - b.sequenceNumber);
+      // Ajouter un indicateur `hasTransfer` pour chaque étape
+      const etapesWithTransferStatus = role.etapes.map((etape) => {
+        const hasTransfer = etape.documents.some(
+          (doc) => doc.transferStatus === "sent"
+        );
+
+        return {
+          idEtape: etape.idEtape,
+          LibelleEtape: etape.LibelleEtape,
+          Description: etape.Description,
+          sequenceNumber: etape.sequenceNumber,
+          Validation: etape.Validation,
+          hasTransfer, // Indicateur de transfert
+          typeProjets: etape.typeProjets.map((typeProjet) => ({
+            idType: typeProjet.idType,
+            Libelle: typeProjet.Libelle,
+            Description: typeProjet.Description,
+          })),
+        };
+      });
+
+      // Trier les étapes par numéro de séquence
+      const sortedEtapes = etapesWithTransferStatus.sort(
+        (a, b) => a.sequenceNumber - b.sequenceNumber
+      );
+
+      // Calculer le nombre total d'étapes pour les projets associés
+      const totalEtapes = await Etape.count({
+        include: [
+          {
+            model: TypeProjet,
+            as: "typeProjets",
+            through: "EtapeTypeProjet",
+            where: {
+              idType: {
+                [Sequelize.Op.in]: role.etapes.flatMap((etape) =>
+                  etape.typeProjets.map((tp) => tp.idType)
+                ),
+              },
+            },
+          },
+        ],
+      });
 
       return reply.send({
         success: true,
         role: {
           id: role.idRole,
           name: role.name,
-          description: role.description
+          description: role.description,
         },
+        totalEtapes, // Nombre total d'étapes pour les projets associés
         count: sortedEtapes.length,
-        data: sortedEtapes
+        data: sortedEtapes,
       });
-
     } catch (error) {
-      console.error('Error fetching etapes by role name:', error);
+      console.error("Error fetching etapes by role name:", error);
       return reply.status(500).send({
         success: false,
-        error: 'Internal Server Error',
-        message: error.message
+        error: "Internal Server Error",
+        message: error.message,
       });
     }
-  }
+  },
 };
 
 module.exports = etapeController;
