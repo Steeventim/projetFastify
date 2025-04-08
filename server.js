@@ -1,4 +1,6 @@
+"use strict";
 require("dotenv").config();
+
 const fastify = require("fastify")({
   logger: {
     level: "debug", // Set the logging level to 'info' to see more detailed logs
@@ -10,11 +12,14 @@ const fastify = require("fastify")({
     },
   },
 });
-<<<<<<< HEAD
+
 const cors = require("@fastify/cors");
-const initializationRoutes = require("./routes/initializationRoutes");
 const replyFrom = require("@fastify/reply-from");
 const db = require("./models");
+const { Notification } = require("./models");
+
+// Import routes
+const initializationRoutes = require("./routes/initializationRoutes");
 const userRoutes = require("./routes/userRoutes");
 const fastifyRoleRoutes = require("./routes/fastifyRoleRoutes");
 const structureRoutes = require("./routes/structureRoutes");
@@ -24,43 +29,20 @@ const projetRoutes = require("./routes/projetRoutes");
 const searchRoutes = require("./routes/searchRoutes");
 const documentRoutes = require("./routes/documentRoutes");
 const etapeTypeProjetRoutes = require("./routes/etapeTypeProjetRoutes");
-const { Server } = require("socket.io"); // Importer socket.io
-
+const notificationRoutes = require("./routes/notificatonRoutes");
 // CORS Configuration
 fastify.register(cors, {
   origin: true, // This will enable all origins during development
-  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization"],
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+  allowedHeaders: ["Content-Type", "Authorization", "Accept"],
+  exposedHeaders: ["Content-Range", "X-Content-Range"],
   credentials: true,
-=======
-const cors = require('@fastify/cors');
-const initializationRoutes = require('./routes/initializationRoutes');
-const replyFrom = require('@fastify/reply-from');
-const db = require('./models');
-const userRoutes = require('./routes/userRoutes');
-const fastifyRoleRoutes = require('./routes/fastifyRoleRoutes');
-const structureRoutes = require('./routes/structureRoutes');
-const commentaireRoutes = require('./routes/commentaireRoutes');
-const etapeRoutes = require('./routes/etapeRoutes');
-const projetRoutes = require('./routes/projetRoutes');
-const searchRoutes = require('./routes/searchRoutes');
-const documentRoutes = require('./routes/documentRoutes');
-const etapeTypeProjetRoutes = require('./routes/etapeTypeProjetRoutes');
-
-// Add health check route - must be before other route registrations
-fastify.get('/health', async (request, reply) => {
-  return reply.send({ status: 'ok', timestamp: new Date().toISOString() });
+  maxAge: 86400,
 });
 
-// CORS Configuration
-fastify.register(cors, {
-  origin: true,  // More permissive for testing
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
-  exposedHeaders: ['Content-Range', 'X-Content-Range'],
-  credentials: true,
-  maxAge: 86400
->>>>>>> 117ab5ddf7171f000fdd8954d38f18f4529eeefb
+// Add health check route - must be before other route registrations
+fastify.get("/health", async (request, reply) => {
+  return reply.send({ status: "ok", timestamp: new Date().toISOString() });
 });
 
 // Add multipart support
@@ -94,17 +76,18 @@ fastify.register(etapeTypeProjetRoutes);
 fastify.register(documentRoutes);
 fastify.register(initializationRoutes);
 
-<<<<<<< HEAD
 // Create a server instance for WebSocket
 const server = require("http").createServer(fastify.server);
+const { Server } = require("socket.io"); // Importer socket.io
 const io = new Server(server);
-=======
+
 // Add error handler
 fastify.setErrorHandler((error, request, reply) => {
   fastify.log.error(error);
-  reply.status(500).send({ error: 'Internal Server Error', message: error.message });
+  reply
+    .status(500)
+    .send({ error: "Internal Server Error", message: error.message });
 });
->>>>>>> 117ab5ddf7171f000fdd8954d38f18f4529eeefb
 
 // Handle WebSocket connections
 io.on("connection", (socket) => {
@@ -128,33 +111,25 @@ const start = async () => {
   try {
     // Ensure database connection first
     await db.sequelize.authenticate();
-    console.log('Database connection established');
+    console.log("Database connection established");
 
     // Then start server
     await fastify.ready();
     await fastify.listen({
-<<<<<<< HEAD
       port: process.env.PORT ? parseInt(process.env.PORT) : 3003,
-      host: process.env.HOST || "localhost",
-=======
-      port: process.env.PORT || 3003,
-      host: '0.0.0.0'
->>>>>>> 117ab5ddf7171f000fdd8954d38f18f4529eeefb
+      host: process.env.HOST || "0.0.0.0", // Use 0.0.0.0 to allow external access
     });
 
     const address = fastify.server.address();
-    console.log('Server listening at:', {
+    console.log("Server listening at:", {
       port: address.port,
       host: address.address,
-      protocol: 'http'
+      protocol: "http",
     });
-
+    console.log(Notification); // Vérifiez que le modèle est défini
   } catch (err) {
-<<<<<<< HEAD
     console.error("Error starting server:", err); // Add detailed error logging
-=======
-    fastify.log.error('Error starting server:', err);
->>>>>>> 117ab5ddf7171f000fdd8954d38f18f4529eeefb
+    fastify.log.error("Error starting server:", err);
     process.exit(1);
   }
 };

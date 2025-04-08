@@ -8,10 +8,10 @@ const {
   Role,
   sequelize,
   Sequelize,
+  Notification,
 } = require("../models");
 const { v4: uuidv4 } = require("uuid");
-const { createNotification } = require("../utils/notificationUtils"); // Import createNotification
-
+const { createNotification } = require("../utils/notificationUtils"); // Import de createNotification
 const documentController = {
   verifyDocumentStatus: async (document) => {
     try {
@@ -296,6 +296,12 @@ const documentController = {
           { transaction: t }
         );
 
+        // Log before creating notification
+        console.log(
+          "Creating approval notification for user:",
+          document.userId
+        );
+
         // Émettre une notification pour l'approbation
         await createNotification({
           userId: document.userId, // ID de l'utilisateur qui doit recevoir la notification
@@ -346,13 +352,22 @@ const documentController = {
       console.log(
         `Document ${documentId} forwarded to etape ${nextEtape.idEtape} by user ${userId}`
       );
+      // Log before creating notification
+      console.log("Creating transfer notification for user:", nextEtape.userId);
 
       // Émettre une notification pour le transfert
-      await createNotification({
-        userId: nextEtape.userId, // ID de l'utilisateur qui doit recevoir la notification
-        message: `Le document ${documentId} a été transféré à l'étape ${nextEtapeName}.`,
-        type: "document_forwarded",
-      });
+      if (nextEtape.userId) {
+        await createNotification({
+          userId: nextEtape.userId, // ID de l'utilisateur qui doit recevoir la notification
+          title: "Document Transferred",
+          message: `Le document ${documentId} a été transféré à l'étape ${nextEtapeName}.`,
+          type: "document_approved",
+        });
+      } else {
+        console.warn(
+          `No userId found for next etape: ${nextEtapeName} (etapeId: ${nextEtape.idEtape})`
+        );
+      }
 
       // 9. Get updated document with associations
       const updatedDocument = await Document.findOne({
