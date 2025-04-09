@@ -1,11 +1,16 @@
-const documentController = require('../controllers/documentController');
-const authMiddleware = require('../middleware/authMiddleware');
+const documentController = require("../controllers/documentController");
+const authMiddleware = require("../middleware/authMiddleware");
 const uploadConfig = require('../config/upload');
 
 module.exports = async function (fastify, opts) {
   // Forward document
-  fastify.post('/forward-document', { 
-    preHandler: [authMiddleware.verifyToken, authMiddleware.requireRole(['admin', 'user'])],
+  fastify.post(
+    "/forward-document",
+    {
+      preHandler: [
+        authMiddleware.verifyToken,
+        authMiddleware.requireRole(["admin", "user"]),
+      ],
     schema: {
       consumes: ['multipart/form-data'],
       body: {
@@ -27,7 +32,9 @@ module.exports = async function (fastify, opts) {
         }
       }
     }
-  }, documentController.forwardDocument);
+    },
+    documentController.forwardDocument
+  );
 
   // View document
   fastify.get('/document/:documentTitle', {
