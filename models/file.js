@@ -13,6 +13,10 @@ module.exports = (sequelize, DataTypes) => {
         key: 'idDocument'
       }
     },
+    originalName: {
+      type: DataTypes.STRING,
+      allowNull: false
+    },
     fileName: {
       type: DataTypes.STRING,
       allowNull: false
@@ -23,17 +27,41 @@ module.exports = (sequelize, DataTypes) => {
     },
     fileType: {
       type: DataTypes.STRING,
-      allowNull: false
+      allowNull: false,
+      validate: {
+        isValidMimeType(value) {
+          const uploadConfig = require('../config/upload');
+          if (!uploadConfig.isAllowedMimeType(value)) {
+            throw new Error('Invalid file type');
+          }
+        }
+      }
     },
     fileSize: {
       type: DataTypes.INTEGER,
-      allowNull: false
+      allowNull: false,
+      validate: {
+        isValidSize(value) {
+          const uploadConfig = require('../config/upload');
+          const extension = uploadConfig.getExtension(this.fileType)?.slice(1);
+          if (extension && value > uploadConfig.FILE_SIZE_LIMITS[extension]) {
+            throw new Error(`File size exceeds limit of ${uploadConfig.getHumanReadableSize(uploadConfig.FILE_SIZE_LIMITS[extension])}`);
+          }
+        }
+      }
     },
     thumbnailPath: {
       type: DataTypes.STRING,
       allowNull: true
     }
-
+  }, {
+    hooks: {
+      beforeDestroy: async (file) => {
+        // Clean up physical files when record is deleted
+        const fileHandler = require('../services/fileHandler');
+        await fileHandler.deleteFile(file.filePath, file.thumbnailPath);
+      }
+    }
   });
 
   File.associate = (models) => {

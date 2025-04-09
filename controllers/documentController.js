@@ -1,5 +1,7 @@
 const { Document, User, Commentaire, File, Etape, UserRoles, Role, sequelize, Sequelize } = require('../models');
 const { v4: uuidv4 } = require('uuid');
+const fileHandler = require('../services/fileHandler');
+const uploadConfig = require('../config/upload');
 
 const documentController = {
   verifyDocumentStatus: async (document) => {
@@ -22,10 +24,11 @@ const documentController = {
       documentId,
       userId, 
       comments, 
-      files, 
       etapeId,
       UserDestinatorName: providedDestinator 
     } = request.body;
+    
+    const files = request.files || {};
   
     if (!documentId || !etapeId) {
       return reply.status(400).send({ 
@@ -35,6 +38,7 @@ const documentController = {
     }
   
     const transferTimestamp = new Date();
+    const t = await sequelize.transaction();
   
     try {
       const etape = await Etape.findByPk(etapeId);
@@ -45,7 +49,6 @@ const documentController = {
         });
       }
 
-      // Role check
       const roleCheck = await documentController.checkUserEtapeRole(userId, etapeId);
       if (!roleCheck.success || !roleCheck.hasPermission) {
         console.log('Role check details:', roleCheck.details);
@@ -56,21 +59,18 @@ const documentController = {
         });
       }
 
-      // Find next etape
       const nextEtape = await Etape.findOne({
         where: { 
           sequenceNumber: etape.sequenceNumber + 1 
         }
       });
 
-      // Determine destinator user
       let destinatorUser;
       if (providedDestinator) {
         destinatorUser = await User.findOne({ 
           where: { NomUser: providedDestinator }
         });
       } else if (nextEtape) {
-        // Find users with the required role for next etape
         const usersWithRole = await User.findAll({
           include: [{
             model: Role,
@@ -84,7 +84,6 @@ const documentController = {
       }
 
       if (!destinatorUser) {
-        // Log more details about the next etape
         console.log('Next etape details:', {
           etapeId: nextEtape?.idEtape,
           etapeName: nextEtape?.LibelleEtape,
@@ -104,7 +103,6 @@ const documentController = {
         });
       }
 
-      // Find the document by ID
       let document = await Document.findByPk(documentId);
       if (!document) {
         return reply.status(404).send({ 
@@ -120,14 +118,11 @@ const documentController = {
           message: 'User not found' 
         });
       }
-  
-      // Remove duplicate role check here since we already checked above
-  
-      // Create only new comments from the forwarding user
+
       const newComments = [];
       if (comments && Array.isArray(comments)) {
         for (const comment of comments) {
-          if (comment.content?.trim()) {  // Only create comment if content exists and isn't empty
+          if (comment.content?.trim()) {
             const newComment = await Commentaire.create({
               idComment: uuidv4(),
               documentId: document.idDocument,
@@ -139,22 +134,39 @@ const documentController = {
           }
         }
       }
-  
-      // Logic to send the document to the destinator
-      
-      // Update document status
+
+      const savedFiles = [];
+      for (const fileField in files) {
+        const file = files[fileField];
+        try {
+          const savedFile = await fileHandler.saveFile(file, document.idDocument);
+          const fileRecord = await File.create({
+            idFile: uuidv4(),
+            documentId: document.idDocument,
+            fileName: savedFile.fileName,
+            originalName: savedFile.originalName,
+            filePath: savedFile.filePath,
+            fileType: savedFile.fileType,
+            fileSize: savedFile.fileSize,
+            thumbnailPath: savedFile.thumbnailPath
+          }, { transaction: t });
+          savedFiles.push(fileRecord);
+        } catch (fileError) {
+          console.error('Error processing file:', fileError);
+        }
+      }
+
       document.transferStatus = 'sent';
       document.transferTimestamp = transferTimestamp;
       document.UserDestinatorName = destinatorUser.NomUser;
-      await document.save();
+      await document.save({ transaction: t });
   
-      // Get fresh document data including URL, comments, and files
       const updatedDocument = await Document.findByPk(documentId, {
         include: [
           {
             model: Commentaire,
             as: 'commentaires',
-            required: false, // Make this an outer join
+            required: false,
             where: newComments.length > 0 ? {
               idComment: newComments.map(c => c.idComment)
             } : undefined,
@@ -167,11 +179,14 @@ const documentController = {
           },
           {
             model: File,
-            as: 'files'
+            as: 'files',
+            include: savedFiles.map(f => f.idFile)
           }
         ],
-        attributes: ['idDocument', 'Title', 'url', 'status', 'transferStatus', 'transferTimestamp']
+        attributes: ['idDocument', 'Title', 'status', 'transferStatus', 'transferTimestamp']
       });
+
+      await t.commit();
   
       return reply.status(200).send({ 
         success: true,
@@ -191,6 +206,7 @@ const documentController = {
       });
   
     } catch (error) {
+      await t.rollback();
       console.error('Error forwarding document:', {
         message: error.message,
         stack: error.stack,
@@ -208,16 +224,15 @@ const documentController = {
       documentId,
       userId, 
       comments, 
-      files, 
       etapeId,
       UserDestinatorName,
       nextEtapeName
     } = request.body;
+    const files = request.files || {};
 
     const t = await sequelize.transaction();
 
     try {
-      // 1. Validate request
       if (!documentId || !etapeId || !nextEtapeName) {
         return reply.status(400).send({
           error: 'Bad Request',
@@ -225,7 +240,6 @@ const documentController = {
         });
       }
 
-      // 2. Get current etape and its sequence
       const currentEtape = await Etape.findByPk(etapeId, { transaction: t });
       if (!currentEtape) {
         await t.rollback();
@@ -235,16 +249,14 @@ const documentController = {
         });
       }
 
-      // 3. Find next etape by name and sequence validation
       const nextEtape = await Etape.findOne({
         where: {
           LibelleEtape: nextEtapeName,
-          sequenceNumber: { [Sequelize.Op.gt]: currentEtape.sequenceNumber }  // Fixed: Use Sequelize.Op
+          sequenceNumber: { [Sequelize.Op.gt]: currentEtape.sequenceNumber }
         },
         transaction: t
       });
 
-      // 4. Get document
       const document = await Document.findByPk(documentId, { transaction: t });
       if (!document) {
         await t.rollback();
@@ -254,9 +266,7 @@ const documentController = {
         });
       }
 
-      // 5. Handle case when no next etape exists
       if (!nextEtape) {
-        // Update document status to approved
         await document.update({
           status: 'verified',
           transferStatus: 'received',
@@ -271,7 +281,6 @@ const documentController = {
         });
       }
 
-      // 6. Create comments if provided
       const newComments = [];
       if (comments?.length) {
         for (const comment of comments) {
@@ -288,7 +297,27 @@ const documentController = {
         }
       }
 
-      // 7. Update document with new etape and status
+      const savedFiles = [];
+      for (const fileField in files) {
+        const file = files[fileField];
+        try {
+          const savedFile = await fileHandler.saveFile(file, documentId);
+          const fileRecord = await File.create({
+            idFile: uuidv4(),
+            documentId: documentId,
+            fileName: savedFile.fileName,
+            originalName: savedFile.originalName,
+            filePath: savedFile.filePath,
+            fileType: savedFile.fileType,
+            fileSize: savedFile.fileSize,
+            thumbnailPath: savedFile.thumbnailPath
+          }, { transaction: t });
+          savedFiles.push(fileRecord);
+        } catch (fileError) {
+          console.error('Error processing file:', fileError);
+        }
+      }
+
       await document.update({
         etapeId: nextEtape.idEtape,
         transferStatus: 'sent',
@@ -296,7 +325,6 @@ const documentController = {
         UserDestinatorName
       }, { transaction: t });
 
-      // 8. Get updated document with associations
       const updatedDocument = await Document.findOne({
         where: { idDocument: documentId },
         include: [
@@ -313,14 +341,14 @@ const documentController = {
 
       await t.commit();
 
-      // 9. Send response
       return reply.send({
         success: true,
         message: 'Document forwarded to next etape successfully',
         data: {
           document: updatedDocument,
           nextEtape,
-          comments: newComments
+          comments: newComments,
+          files: savedFiles
         }
       });
 
@@ -348,7 +376,7 @@ const documentController = {
         ]
       }).catch(error => {
         console.error('Error fetching document:', error);
-        return null; // Return null if there's an error
+        return null;
       });
 
       if (!document) {
@@ -377,7 +405,6 @@ const documentController = {
       const { userId } = request.params;
       console.log('Looking up user with ID:', userId);
 
-      // First get the user's role and etape info
       const userRoleInfo = await UserRoles.findOne({
         where: { userId },
         include: [{
@@ -385,7 +412,7 @@ const documentController = {
           attributes: ['idRole', 'name'],
           include: [{
             model: Etape,
-            as: 'etape', // Match the alias defined in your Role model
+            as: 'etape',
             attributes: ['idEtape', 'LibelleEtape', 'sequenceNumber']
           }]
         }]
@@ -403,7 +430,6 @@ const documentController = {
       const userEtape = userRoleInfo.Role.etape;
       console.log('Found user etape:', userEtape.LibelleEtape);
 
-      // Rest of the code remains unchanged...
     } catch (error) {
       console.error('Error fetching forwarded documents:', error);
       return reply.status(500).send({
@@ -418,7 +444,6 @@ const documentController = {
     try {
       const { documentId, userId } = request.params;
 
-      // 1. Get user with roles and document in parallel
       const [user, document] = await Promise.all([
         User.findOne({
           where: { idUser: userId },
@@ -435,7 +460,6 @@ const documentController = {
         })
       ]);
 
-      // 2. Basic validations
       if (!user || !user.Roles?.length) {
         return reply.status(403).send({
           success: false,
@@ -450,7 +474,6 @@ const documentController = {
         });
       }
 
-      // 3. Get role's current etape
       const currentRole = user.Roles[0];
       if (!currentRole?.idRole) {
         return reply.status(403).send({
@@ -459,7 +482,6 @@ const documentController = {
         });
       }
 
-      // 4. Find or create etape
       let currentEtape = await Etape.findOne({
         where: { 
           roleId: currentRole.idRole
@@ -468,7 +490,6 @@ const documentController = {
       });
 
       if (!currentEtape) {
-        // Create default etape if none exists
         currentEtape = await Etape.create({
           idEtape: uuidv4(),
           LibelleEtape: `Default etape for ${currentRole.name}`,
@@ -477,14 +498,12 @@ const documentController = {
         });
       }
 
-      // 5. Update document with etape
       await document.update({
         etapeId: currentEtape.idEtape,
         transferStatus: document.transferStatus === 'sent' ? 'received' : document.transferStatus,
         transferTimestamp: document.transferStatus === 'sent' ? new Date() : document.transferTimestamp
       });
 
-      // 6. Get fresh document data
       const updatedDocument = await Document.findByPk(documentId, {
         include: [
           { model: Commentaire, as: 'commentaires', include: [{ model: User, as: 'user' }] },
@@ -493,7 +512,6 @@ const documentController = {
         ]
       });
 
-      // 7. Send response
       return reply.send({
         success: true,
         data: {
@@ -532,7 +550,6 @@ const documentController = {
         });
       }
 
-      // Find the document by name
       const document = await Document.findOne({
         where: { Title: documentName }
       });
@@ -544,7 +561,6 @@ const documentController = {
         });
       }
 
-      // Find the etape by name
       const etape = await Etape.findOne({
         where: { LibelleEtape: etapeName }
       });
@@ -556,16 +572,13 @@ const documentController = {
         });
       }
 
-      // Update document with etape ID
       await document.update({ etapeId: etape.idEtape });
       
-
-      // Return updated document with etape information - Fix the include alias
       const updatedDocument = await Document.findOne({
         where: { Title: documentName },
         include: [{
           model: Etape,
-          as: 'etape', // Add the correct alias here
+          as: 'etape',
           attributes: ['idEtape', 'LibelleEtape', 'Description', 'sequenceNumber']
         }]
       });
@@ -590,7 +603,6 @@ const documentController = {
       const { documentTitle } = request.params;
       const updates = request.body;
 
-      // Find document
       const document = await Document.findOne({
         where: { Title: documentTitle }
       });
@@ -602,10 +614,8 @@ const documentController = {
         });
       }
 
-      // Update document
       await document.update(updates);
 
-      // Fetch updated document with relations
       const updatedDocument = await Document.findOne({
         where: { Title: documentTitle },
         include: [
@@ -632,7 +642,6 @@ const documentController = {
 
   async checkUserEtapeRole(userId, etapeId) {
     try {
-      // Get user with roles
       const user = await User.findByPk(userId, {
         include: [{
           model: Role,
@@ -641,7 +650,6 @@ const documentController = {
         }]
       });
 
-      // Get etape with required role
       const etape = await Etape.findByPk(etapeId);
 
       if (!user || !etape) {
@@ -651,7 +659,6 @@ const documentController = {
         };
       }
 
-      // Find the role required for this etape
       const requiredRole = await Role.findByPk(etape.roleId);
       
       if (!requiredRole) {
@@ -662,7 +669,6 @@ const documentController = {
         };
       }
 
-      // Check if user has the required role (case-insensitive)
       const hasRequiredRole = user.Roles.some(role => 
         role.idRole === etape.roleId || 
         role.name.toLowerCase() === requiredRole.name.toLowerCase()
@@ -714,7 +720,6 @@ const documentController = {
     const t = await sequelize.transaction();
 
     try {
-      // 1. Get user with their current role and etape
       const user = await User.findOne({
         where: { idUser: userId },
         include: [{
@@ -746,10 +751,9 @@ const documentController = {
 
       const currentEtape = user.Roles[0].etapes[0];
 
-      // 2. Get all documents sent to this user with broader conditions
       const documents = await Document.findAll({
         where: {
-          [Sequelize.Op.or]: [  // Fix: Use Sequelize.Op instead of sequelize.Op
+          [Sequelize.Op.or]: [
             { UserDestinatorName: user.NomUser },
             { etapeId: currentEtape.idEtape }
           ],
@@ -798,11 +802,9 @@ const documentController = {
         }))
       });
 
-      // 3. Process each document
       const processedDocs = await Promise.all(documents.map(async (doc) => {
         const previousEtapeId = doc.etapeId;
 
-        // Only update if document is sent to this user specifically
         if (doc.UserDestinatorName === user.NomUser && previousEtapeId !== currentEtape.idEtape) {
           await doc.update({
             etapeId: currentEtape.idEtape,
@@ -865,7 +867,6 @@ const documentController = {
     const t = await sequelize.transaction();
 
     try {
-      // 1. Basic validation
       if (!documentId || !userId || !etapeId) {
         return reply.status(400).send({
           error: 'Bad Request',
@@ -873,7 +874,6 @@ const documentController = {
         });
       }
 
-      // 2. Get document and check if it exists
       const document = await Document.findByPk(documentId, { transaction: t });
       if (!document) {
         await t.rollback();
@@ -883,7 +883,6 @@ const documentController = {
         });
       }
 
-      // 3. Create comments if provided
       const newComments = [];
       if (comments?.length) {
         for (const comment of comments) {
@@ -900,14 +899,12 @@ const documentController = {
         }
       }
 
-      // 4. Update document status
       await document.update({
         status: 'verified',
         transferStatus: 'received',
         transferTimestamp: new Date()
       }, { transaction: t });
 
-      // 5. Get updated document with associations
       const updatedDocument = await Document.findOne({
         where: { idDocument: documentId },
         include: [
@@ -946,7 +943,6 @@ const documentController = {
 
   getLatestDocument: async (request, reply) => {
     try {
-      // Find the most recent document
       const latestDocument = await Document.findOne({
         include: [
           {
@@ -969,7 +965,7 @@ const documentController = {
           }
         ],
         order: [
-          ['createdAt', 'DESC']  // Order by creation date, most recent first
+          ['createdAt', 'DESC']
         ],
         attributes: [
           'idDocument',
@@ -983,7 +979,6 @@ const documentController = {
         ]
       });
 
-      // Handle case where no documents exist
       if (!latestDocument) {
         return reply.status(404).send({
           success: false,
@@ -992,7 +987,6 @@ const documentController = {
         });
       }
 
-      // Format the response
       const formattedDocument = {
         ...latestDocument.get({ plain: true }),
         commentaires: latestDocument.commentaires?.map(comment => ({
@@ -1017,7 +1011,6 @@ const documentController = {
         } : null
       };
 
-      // Send successful response
       return reply.send({
         success: true,
         data: formattedDocument
@@ -1038,7 +1031,6 @@ const documentController = {
     try {
       const { documentId, userId, comments } = request.body;
 
-      // 1. Basic validation
       if (!documentId || !userId) {
         await t.rollback();
         return reply.status(400).send({
@@ -1047,7 +1039,6 @@ const documentController = {
         });
       }
 
-      // 2. Get document with all its associations
       const document = await Document.findOne({
         where: { idDocument: documentId },
         include: [
@@ -1071,7 +1062,6 @@ const documentController = {
         });
       }
 
-      // 3. Find original sender from first comment
       const firstComment = document.commentaires[0];
       if (!firstComment?.user) {
         await t.rollback();
@@ -1083,7 +1073,6 @@ const documentController = {
 
       const originalSender = firstComment.user;
 
-      // 4. Add rejection comments
       const newComments = [];
       if (comments?.length) {
         for (const comment of comments) {
@@ -1100,7 +1089,6 @@ const documentController = {
         }
       }
 
-      // 5. Update document status
       await document.update({
         status: 'rejected',
         transferStatus: 'sent',
@@ -1108,7 +1096,6 @@ const documentController = {
         UserDestinatorName: originalSender.NomUser
       }, { transaction: t });
 
-      // 6. Get fresh document data
       const updatedDocument = await Document.findOne({
         where: { idDocument: documentId },
         include: [
