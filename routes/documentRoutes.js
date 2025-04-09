@@ -54,7 +54,7 @@ module.exports = async function (fastify, opts) {
   fastify.post('/assign-etape', {
     preHandler: [
       authMiddleware.verifyToken,
-      authMiddleware.requireRole(['admin', 'supervisor'])
+      authMiddleware.requireRole(['admin', 'user'])
     ],
     schema: {
       body: {
@@ -175,7 +175,14 @@ module.exports = async function (fastify, opts) {
                     properties: {
                       idComment: { type: 'string' },
                       Contenu: { type: 'string' },
-                      createdAt: { type: 'string' }
+                      createdAt: { type: 'string' },
+                      user: {
+                        type: 'object',
+                        properties: {
+                          idUser: { type: 'string' },
+                          NomUser: { type: 'string' }
+                        }
+                      }
                     }
                   }
                 },
@@ -185,9 +192,23 @@ module.exports = async function (fastify, opts) {
                     type: 'object',
                     properties: {
                       idFile: { type: 'string' },
-                      name: { type: 'string' },
-                      url: { type: 'string' }
+                      fileName: { type: 'string' },
+                      filePath: { type: 'string' },
+                      fileType: { type: 'string' },
+                      fileSize: { type: 'number' },
+                      thumbnailPath: { type: 'string' },
+                      createdAt: { type: 'string' },
+                      updatedAt: { type: 'string' }
                     }
+                  }
+                },
+                etape: {
+                  type: 'object',
+                  properties: {
+                    idEtape: { type: 'string' },
+                    LibelleEtape: { type: 'string' },
+                    Description: { type: 'string' },
+                    sequenceNumber: { type: 'number' }
                   }
                 }
               }

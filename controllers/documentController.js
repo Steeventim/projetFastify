@@ -1053,6 +1053,8 @@ const documentController = {
 
   getLatestDocument: async (request, reply) => {
     try {
+      console.log("Fetching latest document...");
+      
       const latestDocument = await Document.findOne({
         include: [
           {
@@ -1065,10 +1067,13 @@ const documentController = {
                 attributes: ["idUser", "NomUser"],
               },
             ],
+            required: false
           },
           {
             model: File,
             as: "files",
+            attributes: ["idFile", "documentId", "fileName", "filePath", "fileType", "fileSize", "thumbnailPath", "createdAt", "updatedAt"],
+            required: false
           },
           {
             model: Etape,
@@ -1079,19 +1084,13 @@ const documentController = {
               "Description",
               "sequenceNumber",
             ],
+            required: false
           },
         ],
-        order: [["createdAt", "DESC"]],
-        attributes: [
-          "idDocument",
-          "Title",
-          "status",
-          "transferStatus",
-          "transferTimestamp",
-          "url",
-          "createdAt",
-          "updatedAt",
+        order: [
+          [sequelize.literal('EXTRACT(EPOCH FROM "Document"."createdAt"::timestamptz)'), 'DESC']
         ],
+        logging: console.log
       });
 
       if (!latestDocument) {
@@ -1102,37 +1101,36 @@ const documentController = {
         });
       }
 
-      const formattedDocument = {
-        ...latestDocument.get({ plain: true }),
-        commentaires:
-          latestDocument.commentaires?.map((comment) => ({
-            idComment: comment.idComment,
-            Contenu: comment.Contenu,
-            createdAt: comment.createdAt,
-            user: {
-              idUser: comment.user?.idUser,
-              NomUser: comment.user?.NomUser,
-            },
-          })) || [],
-        files:
-          latestDocument.files?.map((file) => ({
-            idFile: file.idFile,
-            name: file.name,
-            url: file.url,
-          })) || [],
-        etape: latestDocument.etape
-          ? {
-              idEtape: latestDocument.etape.idEtape,
-              LibelleEtape: latestDocument.etape.LibelleEtape,
-              Description: latestDocument.etape.Description,
-              sequenceNumber: latestDocument.etape.sequenceNumber,
-            }
-          : null,
-      };
+      console.log("Retrieved latest document:", {
+        id: latestDocument.idDocument,
+        title: latestDocument.Title,
+        created: latestDocument.createdAt,
+        url: latestDocument.url
+      });
 
       return reply.send({
         success: true,
-        data: formattedDocument,
+        data: {
+          idDocument: latestDocument.idDocument,
+          Title: latestDocument.Title,
+          status: latestDocument.status,
+          transferStatus: latestDocument.transferStatus,
+          transferTimestamp: latestDocument.transferTimestamp || "",
+          url: latestDocument.url || "",
+          createdAt: latestDocument.createdAt,
+          updatedAt: latestDocument.updatedAt,
+          commentaires: latestDocument.commentaires?.map(comment => ({
+            idComment: comment.idComment,
+            Contenu: comment.Contenu,
+            createdAt: comment.createdAt,
+            user: comment.user ? {
+              idUser: comment.user.idUser,
+              NomUser: comment.user.NomUser,
+            } : null,
+          })) || [],
+          files: latestDocument.files || [],
+          etape: latestDocument.etape || {}
+        }
       });
     } catch (error) {
       console.error("Error fetching latest document:", error);
