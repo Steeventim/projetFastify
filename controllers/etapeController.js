@@ -7,7 +7,7 @@ const {
   sequelize,
   Sequelize,
 } = require("../models");
-const { v4: uuidv4 } = require("uuid");
+const { v4: uuidv4, validate: isUUID } = require("uuid");
 
 const { EtapeTypeProjet } = require("../models"); // Import the EtapeTypeProjet model
 
@@ -15,6 +15,13 @@ const etapeController = {
   affectEtapeToDocument: async (request, reply) => {
     try {
       const { etapeName, documentId, typeProjetLibelle } = request.body;
+
+      if (!isUUID(documentId)) {
+        return reply.code(400).send({
+          success: false,
+          message: "Invalid document ID format - must be a valid UUID",
+        });
+      }
 
       // Find the etape and document by ID
       const etape = await Etape.findOne({ where: { LibelleEtape: etapeName } });

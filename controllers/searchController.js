@@ -1,7 +1,7 @@
 const axios = require('axios');
 const { Document, Etape } = require('../models');
 const { Readable } = require('stream');
-const { v4: uuidv4 } = require('uuid');  // Add this import
+const { v4: uuidv4, validate: isUUID } = require('uuid');  // Add validate import
 
 const searchController = {
   searchDocumentsWithoutName: async (request, reply) => {
@@ -131,14 +131,20 @@ const searchController = {
         // Modify URL construction to include search term
         const documentUrl = new URL(`/documents/${encodedDocName}/search/${encodedSearchTerm}`, baseUrl).toString();
         
-        // Find or create document
+        // Find or create document with UUID validation
         let document = await Document.findOne({
           where: { url: documentUrl }
         });
 
         if (!document) {
+          const newId = uuidv4();
+          // Validate UUID format
+          if (!isUUID(newId)) {
+            throw new Error('Invalid UUID generated');
+          }
+
           document = await Document.create({
-            idDocument: uuidv4(),  // Now this will work
+            idDocument: newId,
             Title: documentName,
             url: documentUrl,
             status: 'indexed',
@@ -146,6 +152,16 @@ const searchController = {
             createdAt: new Date(),
             updatedAt: new Date()
           });
+        } else {
+          // Validate existing document UUID
+          if (!isUUID(document.idDocument)) {
+            console.warn('Invalid UUID format found in database:', document.idDocument);
+            return reply.code(500).send({
+              success: false,
+              error: 'Data Integrity Error',
+              message: 'Invalid document ID format in database'
+            });
+          }
         }
 
         // Set response headers
@@ -203,32 +219,95 @@ const searchController = {
         });
       }
 
-      // Define base URL and construct full URL
-      const baseUrl = 'http://localhost:3000'; // Adjust this to match your external API base URL
-      const apiUrl = `${baseUrl}/search1Highligth/${encodeURIComponent(searchTerm)}`;
+      // Define base URL and properly encode the full search term
+      const baseUrl = 'http://localhost:3000';
+      const encodedSearchTerm = encodeURIComponent(searchTerm);
+      const apiUrl = `${baseUrl}/search1Highligth/${encodedSearchTerm}`;
 
-      console.log('Calling external API:', apiUrl);
+      console.log('Search request details:', {
+        originalTerm: searchTerm,
+        encodedTerm: encodedSearchTerm,
+        fullUrl: apiUrl
+      });
 
-      // Call the external API using axios instead of fetch
-      const response = await axios.get(apiUrl);
+      // Add proper timeout and error handling
+      const response = await axios.get(apiUrl, {
+        timeout: 30000,
+        validateStatus: function(status) {
+          return status >= 200 && status < 500;
+        },
+        maxContentLength: Infinity,
+        maxBodyLength: Infinity,
+        responseType: 'json'
+      });
 
-      // Check response status
+      console.log('External API response:', {
+        status: response.status,
+        contentType: response.headers['content-type'],
+        dataLength: response.data ? JSON.stringify(response.data).length : 0
+      });
+
+      // Handle different response statuses
+      if (response.status === 404) {
+        return reply.code(404).send({
+          success: false,
+          error: 'Not Found',
+          message: 'No results found for the search term',
+          searchTerm
+        });
+      }
+
       if (response.status !== 200) {
         throw new Error(`External API returned status ${response.status}`);
       }
 
+      // Ensure we have a valid response
+      if (!response.data) {
+        throw new Error('External API returned no data');
+      }
+
+      // Send the response with proper structure
       return reply.send({
         success: true,
-        data: response.data,
-        searchTerm
+        searchTerm: searchTerm,
+        query: {
+          original: searchTerm,
+          encoded: encodedSearchTerm
+        },
+        data: response.data
       });
 
     } catch (error) {
-      console.error('Error searching propositions:', error);
+      console.error('Error searching propositions:', {
+        error: error.message,
+        searchTerm,
+        status: error.response?.status,
+        data: error.response?.data
+      });
+
+      // Handle specific error cases
+      if (error.code === 'ECONNREFUSED') {
+        return reply.code(503).send({
+          success: false,
+          error: 'Service Unavailable',
+          message: 'Search service is currently unavailable'
+        });
+      }
+
+      if (error.response?.status === 404) {
+        return reply.code(404).send({
+          success: false,
+          error: 'Not Found',
+          message: 'No results found',
+          searchTerm: searchTerm
+        });
+      }
+
       return reply.code(500).send({
         success: false,
         error: 'Internal Server Error',
-        message: error.message
+        message: 'Failed to process search request',
+        details: error.message
       });
     }
   }

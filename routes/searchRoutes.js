@@ -25,9 +25,24 @@ async function searchRoutes(fastify, options) {
     }
   });
 
-  // Add wrapper for proposition search
-  fastify.get('/search-propositions/:searchTerm', async (request, reply) => {
+  // Add wrapper for proposition search with proper parameter validation
+  fastify.get('/search-propositions/:searchTerm', {
+    schema: {
+      params: {
+        type: 'object',
+        required: ['searchTerm'],
+        properties: {
+          searchTerm: { 
+            type: 'string',
+            minLength: 1
+          }
+        }
+      }
+    }
+  }, async (request, reply) => {
     try {
+      // Decode the search term before passing to controller
+      request.params.searchTerm = decodeURIComponent(request.params.searchTerm);
       await searchController.searchPropositions(request, reply);
       return reply;
     } catch (error) {
