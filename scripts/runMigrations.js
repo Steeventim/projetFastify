@@ -55,7 +55,10 @@ const migrations = [
   '20250217112937-add-timestamps-to-etape-type-projet.js',
   '20250221084039-add-url-to-documents.js',
   '20250224000000-add-userdestinatorname-to-documents.js',
-  '20250224083457-remove-content-from-documents.js'
+  '20250224083457-remove-content-from-documents.js',
+
+  // Notifications
+  '20250408053114-create-notifications.js',
 ];
 
 async function dropAllTables() {
