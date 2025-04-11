@@ -30,7 +30,8 @@ const searchRoutes = require("./routes/searchRoutes");
 const documentRoutes = require("./routes/documentRoutes");
 const etapeTypeProjetRoutes = require("./routes/etapeTypeProjetRoutes");
 const notificationRoutes = require("./routes/notificatonRoutes");
-// CORS Configuration
+
+// Register plugins in correct order
 fastify.register(cors, {
   origin: true, // This will enable all origins during development
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
@@ -40,12 +41,16 @@ fastify.register(cors, {
   maxAge: 86400,
 });
 
-// Add health check route - must be before other route registrations
-fastify.get("/health", async (request, reply) => {
-  return reply.send({ status: "ok", timestamp: new Date().toISOString() });
+// Register reply-from before multipart
+fastify.register(replyFrom);
+
+// Add rate limiter
+fastify.register(require("@fastify/rate-limit"), {
+  max: 100,
+  timeWindow: "15 minutes",
 });
 
-// Add multipart support
+// Add multipart support after reply-from
 fastify.register(require("@fastify/multipart"), {
   attachFieldsToBody: true,
   limits: {
@@ -55,14 +60,10 @@ fastify.register(require("@fastify/multipart"), {
   },
 });
 
-// Use a Fastify-compatible rate limiter
-fastify.register(require("@fastify/rate-limit"), {
-  max: 100,
-  timeWindow: "15 minutes",
+// Add health check route - must be before other route registrations
+fastify.get("/health", async (request, reply) => {
+  return reply.send({ status: "ok", timestamp: new Date().toISOString() });
 });
-
-// Register the fastify-reply-from plugin
-fastify.register(replyFrom);
 
 // Register routes
 fastify.register(userRoutes);

@@ -12,7 +12,190 @@ const { v4: uuidv4, validate: isUUID } = require("uuid");
 const { EtapeTypeProjet } = require("../models"); // Import the EtapeTypeProjet model
 
 const etapeController = {
+
   affectEtapeToDocument: async (request, reply) => {
+    const {
+      documentId,
+      userId, 
+      comments, 
+      etapeId,
+      UserDestinatorName,
+      nextEtapeName,
+    } = request.body;
+    const files = request.files || {};
+
+    const t = await sequelize.transaction();
+
+    try {
+      if (!documentId || !etapeId || !nextEtapeName) {
+        return reply.status(400).send({
+          error: "Bad Request",
+          message:
+            "Document ID, current etape ID, and next etape name are required",
+        });
+      }
+
+      const currentEtape = await Etape.findByPk(etapeId, { transaction: t });
+      if (!currentEtape) {
+        await t.rollback();
+        return reply.status(404).send({
+          error: "Not Found",
+          message: "Current etape not found",
+        });
+      }
+
+      const nextEtape = await Etape.findOne({
+        where: {
+          LibelleEtape: nextEtapeName,
+          sequenceNumber: { [Sequelize.Op.gt]: currentEtape.sequenceNumber },
+        },
+        transaction: t,
+      });
+
+      const document = await Document.findByPk(documentId, { transaction: t });
+      if (!document) {
+        await t.rollback();
+        return reply.status(404).send({
+          error: "Not Found",
+          message: "Document not found",
+        });
+      }
+
+      if (!nextEtape) {
+        await document.update(
+          {
+            status: "verified",
+            transferStatus: "received",
+            transferTimestamp: new Date(),
+          },
+          { transaction: t }
+        );
+
+        console.log(
+          "Creating approval notification for user:",
+          document.userId
+        );
+
+        await createNotification({
+          userId: document.userId,
+          message: `Le document ${documentId} a été approuvé.`,
+          type: "document_approved",
+        });
+
+        await t.commit();
+        return reply.send({
+          success: true,
+          message: "Document approved - final etape reached",
+          document,
+        });
+      }
+
+      const newComments = [];
+      if (comments?.length) {
+        for (const comment of comments) {
+          if (comment.content?.trim()) {
+            const newComment = await Commentaire.create(
+              {
+                idComment: uuidv4(),
+                documentId: document.idDocument,
+                userId,
+                Contenu: comment.content,
+                createdAt: new Date(),
+              },
+              { transaction: t }
+            );
+            newComments.push(newComment);
+          }
+        }
+      }
+
+      const savedFiles = [];
+      for (const fileField in files) {
+        const file = files[fileField];
+        try {
+          const savedFile = await fileHandler.saveFile(file, documentId);
+          const fileRecord = await File.create({
+            idFile: uuidv4(),
+            documentId: documentId,
+            fileName: savedFile.fileName,
+            originalName: savedFile.originalName,
+            filePath: savedFile.filePath,
+            fileType: savedFile.fileType,
+            fileSize: savedFile.fileSize,
+            thumbnailPath: savedFile.thumbnailPath
+          }, { transaction: t });
+          savedFiles.push(fileRecord);
+        } catch (fileError) {
+          console.error('Error processing file:', fileError);
+        }
+      }
+
+      await document.update(
+        {
+          etapeId: nextEtape.idEtape,
+          transferStatus: "sent",
+          transferTimestamp: new Date(),
+          UserDestinatorName,
+        },
+        { transaction: t }
+      );
+
+      console.log(
+        `Document ${documentId} forwarded to etape ${nextEtape.idEtape} by user ${userId}`
+      );
+
+      console.log("Creating transfer notification for user:", nextEtape.userId);
+
+      if (nextEtape.userId) {
+        await createNotification({
+          userId: nextEtape.userId,
+          title: "Document Transferred",
+          message: `Le document ${documentId} a été transféré à l'étape ${nextEtapeName}.`,
+          type: "document_approved",
+        });
+      } else {
+        console.warn(
+          `No userId found for next etape: ${nextEtapeName} (etapeId: ${nextEtape.idEtape})`
+        );
+      }
+
+      const updatedDocument = await Document.findOne({
+        where: { idDocument: documentId },
+        include: [
+          {
+            model: Commentaire,
+            as: "commentaires",
+            include: [{ model: User, as: "user" }],
+          },
+          { model: File, as: "files" },
+          { model: Etape, as: "etape" },
+        ],
+        transaction: t,
+      });
+
+      await t.commit();
+
+      return reply.send({
+        success: true,
+        message: "Document forwarded to next etape successfully",
+        data: {
+          document: updatedDocument,
+          nextEtape,
+          comments: newComments,
+          files: savedFiles,
+        },
+      });
+    } catch (error) {
+      await t.rollback();
+      console.error("Error forwarding to next etape:", error);
+      return reply.status(500).send({
+        success: false,
+        error: "Internal Server Error",
+        message: error.message,
+      });
+    }
+  },
+  affectEtapeToDocument1: async (request, reply) => {
     try {
       const { etapeName, documentId, typeProjetLibelle } = request.body;
 

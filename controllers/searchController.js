@@ -1,7 +1,10 @@
 const axios = require('axios');
 const { Document, Etape } = require('../models');
-const { Readable } = require('stream');
-const { v4: uuidv4, validate: isUUID } = require('uuid');  // Add validate import
+const { v4: uuidv4, validate: isUUID } = require('uuid');
+const searchService = require('../services/searchService');
+const PDFKit = require('pdfkit');
+const { sequelize } = require('../models'); // Assuming sequelize is exported from models
+const { PDFDocument } = require('pdf-lib');
 
 const searchController = {
   searchDocumentsWithoutName: async (request, reply) => {
@@ -219,36 +222,9 @@ const searchController = {
         });
       }
 
-      // Define base URL and properly encode the full search term
-      const baseUrl = 'http://localhost:3000';
-      const encodedSearchTerm = encodeURIComponent(searchTerm);
-      const apiUrl = `${baseUrl}/search1Highligth/${encodedSearchTerm}`;
-
-      console.log('Search request details:', {
-        originalTerm: searchTerm,
-        encodedTerm: encodedSearchTerm,
-        fullUrl: apiUrl
-      });
-
-      // Add proper timeout and error handling
-      const response = await axios.get(apiUrl, {
-        timeout: 30000,
-        validateStatus: function(status) {
-          return status >= 200 && status < 500;
-        },
-        maxContentLength: Infinity,
-        maxBodyLength: Infinity,
-        responseType: 'json'
-      });
-
-      console.log('External API response:', {
-        status: response.status,
-        contentType: response.headers['content-type'],
-        dataLength: response.data ? JSON.stringify(response.data).length : 0
-      });
-
-      // Handle different response statuses
-      if (response.status === 404) {
+      const response = await searchService.searchWithHighlight(searchTerm);
+      
+      if (!response || response.hits.total.value === 0) {
         return reply.code(404).send({
           success: false,
           error: 'Not Found',
@@ -257,35 +233,22 @@ const searchController = {
         });
       }
 
-      if (response.status !== 200) {
-        throw new Error(`External API returned status ${response.status}`);
-      }
-
-      // Ensure we have a valid response
-      if (!response.data) {
-        throw new Error('External API returned no data');
-      }
-
-      // Send the response with proper structure
       return reply.send({
         success: true,
         searchTerm: searchTerm,
         query: {
           original: searchTerm,
-          encoded: encodedSearchTerm
+          encoded: encodeURIComponent(searchTerm)
         },
-        data: response.data
+        data: response
       });
 
     } catch (error) {
       console.error('Error searching propositions:', {
         error: error.message,
         searchTerm,
-        status: error.response?.status,
-        data: error.response?.data
       });
 
-      // Handle specific error cases
       if (error.code === 'ECONNREFUSED') {
         return reply.code(503).send({
           success: false,
@@ -294,19 +257,123 @@ const searchController = {
         });
       }
 
-      if (error.response?.status === 404) {
+      return reply.code(500).send({
+        success: false,
+        error: 'Internal Server Error',
+        message: 'Failed to process search request',
+        details: error.message
+      });
+    }
+  },
+
+  highlightDocument: async (request, reply) => {
+    const t = await sequelize.transaction();
+
+    try {
+      const { documentName, searchTerm } = request.params;
+      const space = ' ' + searchTerm.toLowerCase();
+      const lowerSearchTerm = space;
+      const baseUrl = process.env.BASE_URL || 'http://localhost:3003';
+
+      // Construct document URL with search term
+      const encodedDocName = encodeURIComponent(documentName);
+      const encodedSearchTerm = encodeURIComponent(searchTerm);
+      const documentUrl = new URL(`/documents/${encodedDocName}/search/${encodedSearchTerm}`, baseUrl).toString();
+
+      // Check if document already exists with this URL
+      let document = await Document.findOne({
+        where: { url: documentUrl },
+        transaction: t
+      });
+
+      const searchResponse = await searchService.searchWithHighlight(lowerSearchTerm);
+
+      if (!searchResponse || searchResponse.hits.hits.length === 0) {
+        await t.rollback();
         return reply.code(404).send({
           success: false,
           error: 'Not Found',
-          message: 'No results found',
-          searchTerm: searchTerm
+          message: 'Document not found'
+        });
+      }
+
+      const pdfBytes = await searchService.searchDocumentWithHighlight(documentName, searchTerm);
+
+      if (!pdfBytes) {
+        const doc = new PDFKit();
+        reply.type('application/pdf');
+        doc.pipe(reply.raw);
+
+        const content = searchResponse.hits.hits[0]._source.content;
+        const regex = new RegExp(`(${searchTerm})`, 'gi');
+        const parts = content.split(regex);
+
+        parts.forEach(part => {
+          if (part.toLowerCase() === lowerSearchTerm) {
+            doc.fillColor('red').text(part, { continued: true });
+          } else {
+            doc.fillColor('black').text(part, { continued: true });
+          }
+        });
+
+        if (!document) {
+          document = await Document.create({
+            idDocument: uuidv4(),
+            Title: documentName,
+            url: documentUrl,
+            status: 'indexed',
+            transferStatus: 'pending',
+            createdAt: new Date(),
+            updatedAt: new Date()
+          }, { transaction: t });
+        } else {
+          await document.update({
+            updatedAt: new Date()
+          }, { transaction: t });
+        }
+
+        await t.commit();
+        doc.end();
+        return;
+      }
+
+      // If PDF exists and document record doesn't exist, create it
+      if (!document) {
+        document = await Document.create({
+          idDocument: uuidv4(),
+          Title: documentName,
+          url: documentUrl,
+          status: 'indexed',
+          transferStatus: 'pending',
+          createdAt: new Date(),
+          updatedAt: new Date()
+        }, { transaction: t });
+      } else {
+        await document.update({
+          updatedAt: new Date()
+        }, { transaction: t });
+      }
+
+      await t.commit();
+      reply.type('application/pdf');
+      return reply.send(Buffer.from(pdfBytes));
+
+    } catch (error) {
+      await t.rollback();
+      console.error('Error highlighting document:', error);
+
+      if (error.message === 'Document not found') {
+        return reply.code(404).send({
+          success: false,
+          error: 'Not Found',
+          message: 'Document not found'
         });
       }
 
       return reply.code(500).send({
         success: false,
         error: 'Internal Server Error',
-        message: 'Failed to process search request',
+        message: 'Failed to process document highlighting',
         details: error.message
       });
     }

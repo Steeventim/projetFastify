@@ -54,6 +54,22 @@ module.exports = (sequelize, DataTypes) => {
         }
       }
     }
+  }, {
+    hooks: {
+      beforeCreate: async (document, options) => {
+        if (!document.etapeId) {
+          // Find the first etape by sequence number
+          const firstEtape = await sequelize.models.Etape.findOne({
+            order: [['sequenceNumber', 'ASC']],
+            transaction: options.transaction
+          });
+
+          if (firstEtape) {
+            document.etapeId = firstEtape.idEtape;
+          }
+        }
+      }
+    }
   });
 
   Document.prototype.checkEtapeCompletion = async function() {

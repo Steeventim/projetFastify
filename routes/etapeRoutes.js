@@ -4,7 +4,7 @@ const authMiddleware = require("../middleware/authMiddleware");
 module.exports = async function (fastify, opts) {
   // Affect an etape to a document
   fastify.post(
-    "/etapes/affect",
+    "/etapes/affect1",
     {
       preHandler: [
         authMiddleware.verifyToken,
@@ -22,8 +22,40 @@ module.exports = async function (fastify, opts) {
         },
       },
     },
-    etapeController.affectEtapeToDocument
+    etapeController.affectEtapeToDocument1
   );
+
+  fastify.post('/etapes/affect', {
+    schema: {
+      consumes: ['multipart/form-data'],
+      body: {
+        type: 'object',
+        required: ['documentId', 'userId', 'etapeId', 'nextEtapeName'],
+        properties: {
+          documentId: { type: 'string', format: 'uuid' },
+          userId: { type: 'string', format: 'uuid' },
+          etapeId: { type: 'string', format: 'uuid' },
+          nextEtapeName: { type: 'string' },
+          UserDestinatorName: { type: 'string' },
+          'comments.*.content': { type: 'string' },
+          'files.*': {
+            type: 'object',
+            properties: {
+              filename: { type: 'string' },
+              mimetype: { type: 'string' },
+              encoding: { type: 'string' }
+            }
+          }
+        },
+        additionalProperties: true
+      }
+    },
+    preHandler: [
+      authMiddleware.verifyToken,
+      authMiddleware.requireRole(['admin', 'user'])
+    ]
+  }, etapeController.affectEtapeToDocument);
+
 
   // Get all etapes
   fastify.get(
