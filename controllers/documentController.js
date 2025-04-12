@@ -1024,7 +1024,11 @@ const documentController = {
             as: "commentaires",
             include: [{ model: User, as: "user" }],
           },
-          { model: File, as: "files" },
+          {
+            model: File,
+            as: "files",
+            attributes: ["idFile", "documentId", "fileName", "filePath", "fileType", "fileSize", "thumbnailPath", "createdAt", "updatedAt"]
+          },
           { model: Etape, as: "etape" },
         ],
         transaction: t,
@@ -1164,7 +1168,11 @@ const documentController = {
             include: [{ model: User, as: "user" }],
             order: [["createdAt", "ASC"]],
           },
-          { model: File, as: "files" },
+          {
+            model: File,
+            as: "files",
+            attributes: ["idFile", "documentId", "fileName", "filePath", "fileType", "fileSize", "thumbnailPath", "createdAt", "updatedAt"]
+          },
           { model: Etape, as: "etape" },
         ],
         transaction: t,
@@ -1226,7 +1234,11 @@ const documentController = {
             as: "commentaires",
             include: [{ model: User, as: "user" }],
           },
-          { model: File, as: "files" },
+          {
+            model: File,
+            as: "files",
+            attributes: ["idFile", "documentId", "fileName", "filePath", "fileType", "fileSize", "thumbnailPath", "createdAt", "updatedAt"]
+          },
           { model: Etape, as: "etape" },
         ],
         transaction: t,

@@ -118,7 +118,6 @@ const etapeController = {
             idFile: uuidv4(),
             documentId: documentId,
             fileName: savedFile.fileName,
-            originalName: savedFile.originalName,
             filePath: savedFile.filePath,
             fileType: savedFile.fileType,
             fileSize: savedFile.fileSize,

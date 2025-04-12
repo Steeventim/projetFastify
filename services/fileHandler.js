@@ -52,8 +52,7 @@ class FileHandler {
         filePath,
         fileType: file.mimetype,
         fileSize: file.file.bytesRead,
-        thumbnailPath,
-        originalName: file.filename
+        thumbnailPath
       };
     } catch (error) {
       console.error('Error saving file:', error);
