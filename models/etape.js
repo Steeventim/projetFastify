@@ -33,7 +33,7 @@ module.exports = (sequelize, DataTypes) => {
   Etape.associate = (models) => {
     Etape.hasMany(models.Document, {
       foreignKey: 'etapeId',
-      sourceKey: 'idEtape',  // Add this line to explicitly define the source key
+      sourceKey: 'idEtape',
       as: 'documents',
       onDelete: 'SET NULL'
     });
@@ -43,6 +43,11 @@ module.exports = (sequelize, DataTypes) => {
       foreignKey: 'etapeId',
       otherKey: 'idType',
       as: 'typeProjets'
+    });
+
+    Etape.belongsTo(models.Role, {
+      foreignKey: 'roleId',
+      as: 'role'
     });
   };
 

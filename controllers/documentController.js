@@ -139,6 +139,11 @@ const documentController = {
       if (comments && Array.isArray(comments)) {
         for (const comment of comments) {
           if (comment.content?.trim()) {
+            console.log('Creating comment:', {
+              documentId: document.idDocument,
+              userId: user.idUser,
+              contentPreview: comment.content.substring(0, 20) + '...'
+            });
             const newComment = await Commentaire.create({
               idComment: uuidv4(),
               documentId: document.idDocument,
@@ -146,29 +151,53 @@ const documentController = {
               Contenu: comment.content,
               createdAt: new Date(),
             });
+            console.log('Comment created:', newComment.idComment);
             newComments.push(newComment);
           }
         }
+      } else {
+        console.log('No comments to process');
       }
 
+      console.log('Starting file processing for document:', documentId);
       const savedFiles = [];
+      console.log('Files received:', Object.keys(files).length);
       for (const fileField in files) {
         const file = files[fileField];
         try {
-          const savedFile = await fileHandler.saveFile(file, document.idDocument);
+          console.log('Processing file:', fileField, {
+            originalName: file.originalname,
+            size: file.size,
+            mimetype: file.mimetype
+          });
+          
+          let savedFile;
+          if (file.base64 && file.mimetype) {
+            console.log('Handling base64 file upload');
+            savedFile = await fileHandler.decodeAndSaveFile(
+              file.base64, 
+              document.idDocument,
+              file.mimetype
+            );
+          } else {
+            console.log('Handling multipart file upload');
+            savedFile = await fileHandler.saveFile(file, document.idDocument);
+          }
+
+          console.log('File saved to:', savedFile.filePath);
           const fileRecord = await File.create({
             idFile: uuidv4(),
             documentId: document.idDocument,
             fileName: savedFile.fileName,
-            originalName: savedFile.originalName,
+            originalName: file.originalname || savedFile.fileName,
             filePath: savedFile.filePath,
             fileType: savedFile.fileType,
             fileSize: savedFile.fileSize,
             thumbnailPath: savedFile.thumbnailPath
           }, { transaction: t });
-          savedFiles.push(fileRecord);
         } catch (fileError) {
           console.error('Error processing file:', fileError);
+          throw fileError; // Re-throw to trigger transaction rollback
         }
       }
 

@@ -54,9 +54,9 @@ fastify.register(require("@fastify/rate-limit"), {
 fastify.register(require("@fastify/multipart"), {
   attachFieldsToBody: true,
   limits: {
-    fieldSize: 5242880, // 5MB
+    fieldSize: 10485760, // 10MB
     files: 10,
-    fileSize: 10485760, // 10MB
+    fileSize: 52428800, // 50MB
   },
 });
 

@@ -1,200 +1,171 @@
 const {
-  Etape,
-  TypeProjet,
   Document,
   User,
+  Commentaire,
+  File,
+  Etape,
+  TypeProjet,
   Role,
   sequelize,
   Sequelize,
 } = require("../models");
-const { v4: uuidv4, validate: isUUID } = require("uuid");
+const { v4: uuidv4 } = require("uuid");
+const fileHandler = require('../services/fileHandler');
+const { fileTypeFromBuffer } = require('file-type');
 
-const { EtapeTypeProjet } = require("../models"); // Import the EtapeTypeProjet model
+const isUUID = (id) => {
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  return uuidRegex.test(id);
+};
 
 const etapeController = {
-
   affectEtapeToDocument: async (request, reply) => {
-    const {
-      documentId,
-      userId, 
-      comments, 
-      etapeId,
-      UserDestinatorName,
-      nextEtapeName,
-    } = request.body;
-    const files = request.files || {};
+    console.log('Incoming request body:', request.body);
+    console.log('Incoming files:', request.files);
 
     const t = await sequelize.transaction();
-
     try {
-      if (!documentId || !etapeId || !nextEtapeName) {
-        return reply.status(400).send({
-          error: "Bad Request",
-          message:
-            "Document ID, current etape ID, and next etape name are required",
-        });
-      }
+      const { documentId, userId, commentaire, UserDestinatorName, nextEtapeName, files: bodyFiles = [] } = request.body;
 
-      const currentEtape = await Etape.findByPk(etapeId, { transaction: t });
-      if (!currentEtape) {
+      // Convert commentaire to comments array
+      const comments = commentaire ? [{ content: commentaire }] : [];
+
+      // Validate inputs
+      if (!isUUID(documentId) || !isUUID(userId)) {
         await t.rollback();
-        return reply.status(404).send({
-          error: "Not Found",
-          message: "Current etape not found",
+        return reply.code(400).send({
+          success: false,
+          message: "Invalid document or user ID format",
         });
       }
 
-      const nextEtape = await Etape.findOne({
-        where: {
-          LibelleEtape: nextEtapeName,
-          sequenceNumber: { [Sequelize.Op.gt]: currentEtape.sequenceNumber },
-        },
-        transaction: t,
-      });
-
-      const document = await Document.findByPk(documentId, { transaction: t });
-      if (!document) {
-        await t.rollback();
-        return reply.status(404).send({
-          error: "Not Found",
-          message: "Document not found",
-        });
-      }
-
-      if (!nextEtape) {
-        await document.update(
-          {
-            status: "verified",
-            transferStatus: "received",
-            transferTimestamp: new Date(),
-          },
-          { transaction: t }
-        );
-
-        console.log(
-          "Creating approval notification for user:",
-          document.userId
-        );
-
-        await createNotification({
-          userId: document.userId,
-          message: `Le document ${documentId} a été approuvé.`,
-          type: "document_approved",
-        });
-
-        await t.commit();
-        return reply.send({
-          success: true,
-          message: "Document approved - final etape reached",
-          document,
-        });
-      }
-
-      const newComments = [];
-      if (comments?.length) {
-        for (const comment of comments) {
-          if (comment.content?.trim()) {
-            const newComment = await Commentaire.create(
-              {
-                idComment: uuidv4(),
-                documentId: document.idDocument,
-                userId,
-                Contenu: comment.content,
-                createdAt: new Date(),
-              },
-              { transaction: t }
-            );
-            newComments.push(newComment);
-          }
+      // Validate files
+      for (const file of bodyFiles) {
+        if (!file.name || !file.content) {
+          await t.rollback();
+          return reply.code(400).send({
+            success: false,
+            message: "Invalid file format: missing name or content",
+          });
         }
       }
 
-      const savedFiles = [];
-      for (const fileField in files) {
-        const file = files[fileField];
+      // Find document and etape
+      const [document, etape] = await Promise.all([
+        Document.findByPk(documentId, { transaction: t }),
+        Etape.findOne({ where: { LibelleEtape: nextEtapeName }, transaction: t }),
+      ]);
+
+      if (!etape || !document) {
+        await t.rollback();
+        return reply.code(404).send({
+          success: false,
+          message: "Etape or Document not found",
+        });
+      }
+
+      // Process comments
+      console.log(`Processing ${comments.length} comments`);
+      const createdComments = [];
+      for (const comment of comments) {
+        if (comment.content?.trim()) {
+          console.log('Creating comment for document:', documentId);
+          const newComment = await Commentaire.create({
+            idComment: uuidv4(),
+            documentId: document.idDocument,
+            userId,
+            Contenu: comment.content,
+            createdAt: new Date(),
+          }, { transaction: t });
+          createdComments.push(newComment);
+          console.log('Comment created:', newComment.idComment);
+        }
+      }
+
+      // Process files
+      console.log(`Processing ${bodyFiles.length} files`);
+      const createdFiles = [];
+      for (const file of bodyFiles) {
         try {
-          const savedFile = await fileHandler.saveFile(file, documentId);
+          console.log('Processing file:', file.name);
+          // Decode base64 content
+          const buffer = Buffer.from(file.content, 'base64');
+          // Detect MIME type from content
+          const fileType = await fileTypeFromBuffer(buffer);
+          const mimetype = fileType ? fileType.mime : 'application/octet-stream';
+          const savedFile = await fileHandler.saveFile({
+            originalname: file.name,
+            content: buffer,
+            mimetype,
+          }, documentId);
           const fileRecord = await File.create({
             idFile: uuidv4(),
-            documentId: documentId,
+            documentId,
             fileName: savedFile.fileName,
+            originalName: file.originalname,
             filePath: savedFile.filePath,
             fileType: savedFile.fileType,
             fileSize: savedFile.fileSize,
-            thumbnailPath: savedFile.thumbnailPath
+            thumbnailPath: savedFile.thumbnailPath,
           }, { transaction: t });
-          savedFiles.push(fileRecord);
+          createdFiles.push(fileRecord);
+          console.log('File created:', fileRecord.idFile);
         } catch (fileError) {
-          console.error('Error processing file:', fileError);
+          console.error('File processing error:', fileError);
+          await t.rollback();
+          return reply.code(500).send({
+            success: false,
+            message: "Error processing files",
+            error: fileError.message,
+          });
         }
       }
 
-      await document.update(
-        {
-          etapeId: nextEtape.idEtape,
-          transferStatus: "sent",
-          transferTimestamp: new Date(),
-          UserDestinatorName,
-        },
-        { transaction: t }
-      );
-
-      console.log(
-        `Document ${documentId} forwarded to etape ${nextEtape.idEtape} by user ${userId}`
-      );
-
-      console.log("Creating transfer notification for user:", nextEtape.userId);
-
-      if (nextEtape.userId) {
-        await createNotification({
-          userId: nextEtape.userId,
-          title: "Document Transferred",
-          message: `Le document ${documentId} a été transféré à l'étape ${nextEtapeName}.`,
-          type: "document_approved",
-        });
-      } else {
-        console.warn(
-          `No userId found for next etape: ${nextEtapeName} (etapeId: ${nextEtape.idEtape})`
-        );
-      }
-
-      const updatedDocument = await Document.findOne({
-        where: { idDocument: documentId },
-        include: [
-          {
-            model: Commentaire,
-            as: "commentaires",
-            include: [{ model: User, as: "user" }],
-          },
-          { model: File, as: "files" },
-          { model: Etape, as: "etape" },
-        ],
-        transaction: t,
-      });
+      // Update document with etape
+      console.log('Updating document with new etape:', etape.LibelleEtape);
+      await document.update({
+        etapeId: etape.idEtape,
+        UserDestinatorName,
+        transferStatus: 'sent',
+        transferTimestamp: new Date(),
+      }, { transaction: t });
 
       await t.commit();
 
+      // Fetch updated document outside transaction
+      const updatedDocument = await Document.findByPk(documentId, {
+        include: [
+          { model: Etape, as: "etape" },
+          ...(createdComments.length > 0
+            ? [{ model: Commentaire, as: "commentaires", where: { idComment: createdComments.map(c => c.idComment) } }]
+            : [{ model: Commentaire, as: "commentaires" }]),
+          ...(createdFiles.length > 0
+            ? [{ model: File, as: "files", where: { idFile: createdFiles.map(f => f.idFile) } }]
+            : [{ model: File, as: "files" }]),
+        ],
+      });
+
+      console.log('Etape affectation completed successfully');
       return reply.send({
         success: true,
-        message: "Document forwarded to next etape successfully",
+        message: "Document transferred successfully",
         data: {
           document: updatedDocument,
-          nextEtape,
-          comments: newComments,
-          files: savedFiles,
+          comments: createdComments,
+          files: createdFiles,
         },
       });
     } catch (error) {
+      console.error("Error affecting etape to document:", error);
       await t.rollback();
-      console.error("Error forwarding to next etape:", error);
-      return reply.status(500).send({
+      return reply.code(500).send({
         success: false,
         error: "Internal Server Error",
         message: error.message,
       });
     }
   },
-  affectEtapeToDocument1: async (request, reply) => {
+   affectEtapeToDocument1: async (request, reply) => {
     try {
       const { etapeName, documentId, typeProjetLibelle } = request.body;
 
@@ -246,88 +217,7 @@ const etapeController = {
     }
   },
 
-  getAllEtapes: async (request, reply) => {
-    try {
-      const etapes = await Etape.findAll({
-        attributes: [
-          "idEtape",
-          "LibelleEtape",
-          "Description",
-          "Validation",
-          "sequenceNumber",
-          "createdAt",
-          "updatedAt",
-        ],
-        include: [
-          {
-            model: Document,
-            as: "documents",
-            attributes: ["idDocument", "Title"],
-          },
-          {
-            model: TypeProjet,
-            as: "typeProjets",
-            through: "EtapeTypeProjet",
-            attributes: ["idType", "Libelle", "Description"],
-          },
-        ],
-        order: [["sequenceNumber", "ASC"]],
-      });
-
-      console.log(
-        "Retrieved etapes:",
-        etapes.map((etape) => etape.get({ plain: true }))
-      );
-
-      // Transform the data to plain objects and ensure all properties are included
-      const formattedEtapes = etapes.map((etape) => {
-        const plainEtape = etape.get({ plain: true });
-        return {
-          idEtape: plainEtape.idEtape,
-          LibelleEtape: plainEtape.LibelleEtape,
-          Description: plainEtape.Description,
-          Validation: plainEtape.Validation,
-          sequenceNumber: plainEtape.sequenceNumber,
-          createdAt: plainEtape.createdAt,
-          updatedAt: plainEtape.updatedAt,
-          documents: plainEtape.documents
-            ? plainEtape.documents.map((doc) => ({
-                idDocument: doc.idDocument,
-                Title: doc.Title,
-              }))
-            : [],
-          typeProjets: plainEtape.typeProjets
-            ? plainEtape.typeProjets.map((tp) => ({
-                idType: tp.idType,
-                Libelle: tp.Libelle,
-                Description: tp.Description,
-              }))
-            : [],
-        };
-      });
-
-      console.log("Formatted etapes:", formattedEtapes);
-
-      // Get total count of all etapes (add this before the return)
-      const totalEtapesCount = await Etape.count();
-
-      return reply.send({
-        success: true,
-        count: formattedEtapes.length,
-        totalEtapes: totalEtapesCount,
-        data: formattedEtapes,
-      });
-    } catch (error) {
-      console.error("Error fetching etapes:", error);
-      return reply.code(500).send({
-        success: false,
-        error: "Internal Server Error",
-        message: error.message,
-      });
-    }
-  },
-
-  getEtapesByTypeProjet: async (request, reply) => {
+getEtapesByTypeProjet: async (request, reply) => {
     try {
       const { typeProjetId } = request.params;
 
@@ -874,6 +764,88 @@ const etapeController = {
       });
     }
   },
+
+  getAllEtapes: async (request, reply) => {
+    try {
+      const etapes = await Etape.findAll({
+        attributes: [
+          "idEtape",
+          "LibelleEtape",
+          "Description",
+          "Validation",
+          "sequenceNumber",
+          "createdAt",
+          "updatedAt",
+        ],
+        include: [
+          {
+            model: Document,
+            as: "documents",
+            attributes: ["idDocument", "Title"],
+          },
+          {
+            model: TypeProjet,
+            as: "typeProjets",
+            through: "EtapeTypeProjet",
+            attributes: ["idType", "Libelle", "Description"],
+          },
+        ],
+        order: [["sequenceNumber", "ASC"]],
+      });
+
+      console.log(
+        "Retrieved etapes:",
+        etapes.map((etape) => etape.get({ plain: true }))
+      );
+
+      // Transform the data to plain objects and ensure all properties are included
+      const formattedEtapes = etapes.map((etape) => {
+        const plainEtape = etape.get({ plain: true });
+        return {
+          idEtape: plainEtape.idEtape,
+          LibelleEtape: plainEtape.LibelleEtape,
+          Description: plainEtape.Description,
+          Validation: plainEtape.Validation,
+          sequenceNumber: plainEtape.sequenceNumber,
+          createdAt: plainEtape.createdAt,
+          updatedAt: plainEtape.updatedAt,
+          documents: plainEtape.documents
+            ? plainEtape.documents.map((doc) => ({
+                idDocument: doc.idDocument,
+                Title: doc.Title,
+              }))
+            : [],
+          typeProjets: plainEtape.typeProjets
+            ? plainEtape.typeProjets.map((tp) => ({
+                idType: tp.idType,
+                Libelle: tp.Libelle,
+                Description: tp.Description,
+              }))
+            : [],
+        };
+      });
+
+      console.log("Formatted etapes:", formattedEtapes);
+
+      // Get total count of all etapes (add this before the return)
+      const totalEtapesCount = await Etape.count();
+
+      return reply.send({
+        success: true,
+        count: formattedEtapes.length,
+        totalEtapes: totalEtapesCount,
+        data: formattedEtapes,
+      });
+    } catch (error) {
+      console.error("Error fetching etapes:", error);
+      return reply.code(500).send({
+        success: false,
+        error: "Internal Server Error",
+        message: error.message,
+      });
+    }
+  },
+
 };
 
 module.exports = etapeController;
