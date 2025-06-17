@@ -9,7 +9,7 @@ const LOCAL_PDF_DIRECTORY = process.env.PDF_DIRECTORY || "C:/Users/laure/Desktop
 
 // Initialize Elasticsearch client with retry and timeout settings
 const esClient = new Client({
-  node: process.env.ELASTICSEARCH_NODE || 'http://10.100.213.196:9200/',
+  node: process.env.ELASTICSEARCH_NODE || 'http:/10.42.0.45:9200/',
   maxRetries: 3,
   requestTimeout: 30000,
   sniffOnStart: true,
@@ -28,38 +28,65 @@ const ping = async () => {
   }
 };
 
-const searchService = {
-  async searchWithHighlight(searchTerm) {
+const searchService = {  async searchWithHighlight(searchTerm) {
     try {
       // First check if elasticsearch is available
       await ping();
       
       console.log('Searching for term:', searchTerm);
-      const response = await esClient.search({
-        index: process.env.INDEX || 'test1',
-        body: {
-          query: {
-            match: {
-              content: searchTerm
-            }
-          },
-          highlight: {
-            fields: {
-              content: {
-                pre_tags: ['<strong style="font-weight:bold;color:black;">'],
-                post_tags: ['</strong>']
+      
+      // Try with highlighting first
+      try {
+        const response = await esClient.search({
+          index: process.env.INDEX || 'test1',
+          body: {
+            query: {
+              match: {
+                content: searchTerm
+              }
+            },
+            highlight: {
+              max_analyzed_offset: 1000000, // Set to match index setting
+              fragment_size: 150,
+              number_of_fragments: 3,
+              fields: {
+                content: {
+                  pre_tags: ['<strong style="font-weight:bold;color:black;">'],
+                  post_tags: ['</strong>']
+                }
               }
             }
           }
-        }
-      });
+        });
 
-      console.log('Search response:', {
-        total: response.hits.total,
-        hits: response.hits.hits.length
-      });
+        console.log('Search response:', {
+          total: response.hits.total,
+          hits: response.hits.hits.length
+        });
 
-      return response;
+        return response;
+      } catch (highlightError) {
+        // If highlighting fails due to large content, search without highlighting
+        console.log('Highlighting failed, searching without highlights:', highlightError.message);
+        
+        const response = await esClient.search({
+          index: process.env.INDEX || 'test1',
+          body: {
+            query: {
+              match: {
+                content: searchTerm
+              }
+            }
+          }
+        });
+
+        console.log('Search response (no highlights):', {
+          total: response.hits.total,
+          hits: response.hits.hits.length
+        });
+
+        return response;
+      }
     } catch (error) {
       console.error('Search error:', {
         message: error.message,
