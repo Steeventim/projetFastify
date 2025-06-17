@@ -41,6 +41,18 @@ fastify.register(cors, {
   maxAge: 86400,
 });
 
+// Register helmet for security headers
+fastify.register(require("@fastify/helmet"), {
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      scriptSrc: ["'self'"],
+      imgSrc: ["'self'", "data:", "https:"],
+    },
+  },
+});
+
 // Register reply-from before multipart
 fastify.register(replyFrom);
 
@@ -65,6 +77,33 @@ fastify.get("/health", async (request, reply) => {
   return reply.send({ status: "ok", timestamp: new Date().toISOString() });
 });
 
+// Add detailed health check route
+fastify.get("/health/detailed", async (request, reply) => {
+  try {
+    const HealthChecker = require('./utils/healthChecker');
+    const healthChecker = new HealthChecker();
+    
+    // Ajouter les checks
+    healthChecker.addCheck('database', HealthChecker.checkDatabase);
+    healthChecker.addCheck('filesystem', HealthChecker.checkFileSystem);
+    healthChecker.addCheck('memory', HealthChecker.checkMemory);
+    healthChecker.addCheck('environment', HealthChecker.checkEnvironment);
+    healthChecker.addCheck('elasticsearch', HealthChecker.checkElasticsearch);
+    
+    const report = await healthChecker.runAllChecks();
+    
+    const statusCode = report.status === 'healthy' ? 200 : 503;
+    return reply.status(statusCode).send(report);
+  } catch (error) {
+    return reply.status(500).send({
+      status: 'error',
+      message: 'Health check failed',
+      error: error.message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
 // Register routes
 fastify.register(userRoutes);
 fastify.register(fastifyRoleRoutes);
@@ -76,6 +115,7 @@ fastify.register(commentaireRoutes);
 fastify.register(etapeTypeProjetRoutes);
 fastify.register(documentRoutes);
 fastify.register(initializationRoutes);
+fastify.register(notificationRoutes);
 
 // Create a server instance for WebSocket
 const server = require("http").createServer(fastify.server);

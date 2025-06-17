@@ -1,0 +1,16 @@
+{
+  "testEnvironment": "node",
+  "setupFilesAfterEnv": ["<rootDir>/jest.setup.js"],
+  "testMatch": [
+    "**/__tests__/**/*.js",
+    "**/?(*.)+(spec|test).js"
+  ],
+  "collectCoverageFrom": [
+    "controllers/**/*.js",
+    "middleware/**/*.js",
+    "models/**/*.js",
+    "!models/index.js"
+  ],
+  "coverageReporters": ["text", "lcov", "html"],
+  "verbose": true
+}
