@@ -38,7 +38,7 @@ const searchService = {  async searchWithHighlight(searchTerm) {
       // Try with highlighting first
       try {
         const response = await esClient.search({
-          index: process.env.INDEX || 'test1',
+          index: process.env.INDEX || 'test2',
           body: {
             query: {
               match: {
@@ -70,7 +70,7 @@ const searchService = {  async searchWithHighlight(searchTerm) {
         console.log('Highlighting failed, searching without highlights:', highlightError.message);
         
         const response = await esClient.search({
-          index: process.env.INDEX || 'test1',
+          index: process.env.INDEX || 'test2',
           body: {
             query: {
               match: {
@@ -107,11 +107,11 @@ const searchService = {  async searchWithHighlight(searchTerm) {
       console.log('Searching for document:', {
         documentName,
         searchTerm: lowerSearchTerm,
-        index: process.env.INDEX || 'test1'
+        index: process.env.INDEX || 'test2'
       });
 
       const searchResponse = await esClient.search({
-        index: process.env.INDEX || 'test1',
+        index: process.env.INDEX || 'test2',
         query: {
           match: {
             "file.filename": documentName

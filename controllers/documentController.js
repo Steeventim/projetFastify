@@ -8,29 +8,28 @@ const {
   Role,
   sequelize,
   Sequelize,
-  Notification,
 } = require("../models");
 const { v4: uuidv4 } = require("uuid");
 const { createNotification } = require("../utils/notificationUtils"); // Import de createNotification
 const fileHandler = require('../services/fileHandler');
-const uploadConfig = require('../config/upload');
+
+const verifyDocumentStatus = async (document) => {
+  try {
+    const isComplete = await document.checkEtapeCompletion();
+    if (isComplete) {
+      document.status = "verified";
+    } else {
+      document.status =
+        document.status === "rejected" ? "rejected" : "pending";
+    }
+    await document.save();
+    return document;
+  } catch (error) {
+    throw new Error(`Error verifying document status: ${error.message}`);
+  }
+};
 
 const documentController = {
-  verifyDocumentStatus: async (document) => {
-    try {
-      const isComplete = await document.checkEtapeCompletion();
-      if (isComplete) {
-        document.status = "verified";
-      } else {
-        document.status =
-          document.status === "rejected" ? "rejected" : "pending";
-      }
-      await document.save();
-      return document;
-    } catch (error) {
-      throw new Error(`Error verifying document status: ${error.message}`);
-    }
-  },
 
   forwardDocument: async (request, reply) => {
     const {
@@ -1174,11 +1173,11 @@ const documentController = {
       });
     }
   },
-
   rejectDocument: async (request, reply) => {
     const t = await sequelize.transaction();
     try {
       const { documentId, userId, comments } = request.body;
+      const files = request.files || {};
 
       if (!documentId || !userId) {
         await t.rollback();
@@ -1215,17 +1214,165 @@ const documentController = {
         });
       }
 
-      const firstComment = document.commentaires[0];
-      if (!firstComment?.user) {
+      // Get current etape to determine the previous step in workflow
+      const currentEtape = document.etape;
+      if (!currentEtape) {
         await t.rollback();
-        return reply.status(404).send({
+        return reply.status(400).send({
           success: false,
-          message: "Cannot determine original sender",
+          message: "Document does not have a current etape assigned",
         });
       }
 
-      const originalSender = firstComment.user;
+      // Find the previous etape in the workflow (directly beneath in hierarchy)
+      const previousEtape = await Etape.findOne({
+        where: {
+          sequenceNumber: currentEtape.sequenceNumber - 1,
+        },
+        include: [
+          {
+            model: Role,
+            as: "role",
+          },
+        ],
+        transaction: t,
+      });
 
+      if (!previousEtape) {
+        // If no previous etape exists, fall back to original sender
+        const firstComment = document.commentaires[0];
+        if (!firstComment?.user) {
+          await t.rollback();
+          return reply.status(404).send({
+            success: false,
+            message: "Cannot determine where to send rejected document - no previous etape and no original sender found",
+          });
+        }
+        
+        const originalSender = firstComment.user;
+        
+        // Add rejection comments with files
+        const newComments = [];
+        if (comments?.length) {
+          for (const comment of comments) {
+            if (comment.content?.trim()) {
+              const newComment = await Commentaire.create(
+                {
+                  idComment: uuidv4(),
+                  documentId: document.idDocument,
+                  userId,
+                  Contenu: comment.content,
+                  createdAt: new Date(),
+                },
+                { transaction: t }
+              );
+              newComments.push(newComment);
+            }
+          }
+        }
+
+        // Process and attach any new files
+        const savedFiles = [];
+        for (const fileField in files) {
+          const file = files[fileField];
+          try {
+            let savedFile;
+            if (file.base64 && file.mimetype) {
+              savedFile = await fileHandler.decodeAndSaveFile(
+                file.base64, 
+                document.idDocument,
+                file.mimetype
+              );
+            } else {
+              savedFile = await fileHandler.saveFile(file, document.idDocument);
+            }
+
+            const fileRecord = await File.create({
+              idFile: uuidv4(),
+              documentId: document.idDocument,
+              fileName: savedFile.fileName,
+              originalName: file.originalname || savedFile.fileName,
+              filePath: savedFile.filePath,
+              fileType: savedFile.fileType,
+              fileSize: savedFile.fileSize,
+              thumbnailPath: savedFile.thumbnailPath
+            }, { transaction: t });
+            savedFiles.push(fileRecord);
+          } catch (fileError) {
+            console.error('Error processing file during rejection:', fileError);
+            throw fileError;
+          }
+        }
+
+        await document.update(
+          {
+            status: "rejected",
+            transferStatus: "sent",
+            transferTimestamp: new Date(),
+            UserDestinatorName: originalSender.NomUser,
+          },
+          { transaction: t }
+        );
+
+        const updatedDocument = await Document.findOne({
+          where: { idDocument: documentId },
+          include: [
+            {
+              model: Commentaire,
+              as: "commentaires",
+              include: [{ model: User, as: "user" }],
+            },
+            {
+              model: File,
+              as: "files",
+              attributes: ["idFile", "documentId", "fileName", "filePath", "fileType", "fileSize", "thumbnailPath", "createdAt", "updatedAt"]
+            },
+            { model: Etape, as: "etape" },
+          ],
+          transaction: t,
+        });
+
+        await t.commit();
+
+        return reply.send({
+          success: true,
+          message: "Document rejected and returned to original sender",
+          data: {
+            document: updatedDocument,
+            returnedTo: {
+              id: originalSender.idUser,
+              name: originalSender.NomUser,
+            },
+            comments: newComments,
+            files: updatedDocument.files,
+          },
+        });
+      }
+
+      // Find a user with the role for the previous etape
+      const usersWithPreviousRole = await User.findAll({
+        include: [
+          {
+            model: Role,
+            through: { attributes: [] },
+            where: { idRole: previousEtape.roleId },
+          },
+        ],
+        limit: 1,
+        transaction: t,
+      });
+
+      if (!usersWithPreviousRole || usersWithPreviousRole.length === 0) {
+        await t.rollback();
+        return reply.status(404).send({
+          success: false,
+          message: `No user found with role for previous etape: ${previousEtape.LibelleEtape}`,
+        });
+      }
+
+      const targetUser = usersWithPreviousRole[0];
+
+      // Add rejection comments with files
       const newComments = [];
       if (comments?.length) {
         for (const comment of comments) {
@@ -1245,15 +1392,57 @@ const documentController = {
         }
       }
 
+      // Process and attach any new files
+      const savedFiles = [];
+      for (const fileField in files) {
+        const file = files[fileField];
+        try {
+          let savedFile;
+          if (file.base64 && file.mimetype) {
+            savedFile = await fileHandler.decodeAndSaveFile(
+              file.base64, 
+              document.idDocument,
+              file.mimetype
+            );
+          } else {
+            savedFile = await fileHandler.saveFile(file, document.idDocument);
+          }
+
+          const fileRecord = await File.create({
+            idFile: uuidv4(),
+            documentId: document.idDocument,
+            fileName: savedFile.fileName,
+            originalName: file.originalname || savedFile.fileName,
+            filePath: savedFile.filePath,
+            fileType: savedFile.fileType,
+            fileSize: savedFile.fileSize,
+            thumbnailPath: savedFile.thumbnailPath
+          }, { transaction: t });
+          savedFiles.push(fileRecord);
+        } catch (fileError) {
+          console.error('Error processing file during rejection:', fileError);
+          throw fileError;
+        }
+      }
+
+      // Update the document to be sent to the previous etape user
       await document.update(
         {
           status: "rejected",
+          etapeId: previousEtape.idEtape,
           transferStatus: "sent",
           transferTimestamp: new Date(),
-          UserDestinatorName: originalSender.NomUser,
+          UserDestinatorName: targetUser.NomUser,
         },
         { transaction: t }
       );
+
+      // Create notification for the target user
+      await createNotification({
+        userId: targetUser.idUser,
+        message: `Document "${document.Title}" has been rejected and requires your attention.`,
+        type: "document_rejected",
+      });
 
       const updatedDocument = await Document.findOne({
         where: { idDocument: documentId },
@@ -1277,15 +1466,16 @@ const documentController = {
 
       return reply.send({
         success: true,
-        message: "Document rejected and returned to sender",
+        message: `Document rejected and sent to previous step: ${previousEtape.LibelleEtape}`,
         data: {
           document: updatedDocument,
-          returnedTo: {
-            id: originalSender.idUser,
-            name: originalSender.NomUser,
+          sentTo: {
+            id: targetUser.idUser,
+            name: targetUser.NomUser,
+            etape: previousEtape.LibelleEtape,
           },
           comments: newComments,
-          files: document.files,
+          files: updatedDocument.files,
         },
       });
     } catch (error) {

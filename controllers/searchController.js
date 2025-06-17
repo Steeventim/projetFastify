@@ -1,10 +1,9 @@
 const axios = require('axios');
-const { Document, Etape } = require('../models');
+const { Document } = require('../models');
 const { v4: uuidv4, validate: isUUID } = require('uuid');
 const searchService = require('../services/searchService');
 const PDFKit = require('pdfkit');
 const { sequelize } = require('../models'); // Assuming sequelize is exported from models
-const { PDFDocument } = require('pdf-lib');
 
 const searchController = {
   searchDocumentsWithoutName: async (request, reply) => {
@@ -34,18 +33,16 @@ const searchController = {
         }
       });
 
-      if (response.status === 404) {
-        return reply.code(404).send({ 
-          error: 'Document not found',
-          searchTerm 
-        });
+      if (response.status === 404) {        return reply.code(404).send({
+        error: 'Document not found',
+        searchTerm
+      });
       }
 
-      if (response.status !== 200) {
-        return reply.code(response.status).send({ 
-          error: 'Unexpected API response',
-          status: response.status
-        });
+      if (response.status !== 200) {        return reply.code(response.status).send({
+        error: 'Unexpected API response',
+        status: response.status
+      });
       }
 
       // Set headers for streaming response
@@ -58,11 +55,10 @@ const searchController = {
       // Handle stream errors
       response.data.on('error', (err) => {
         console.error('Stream error:', err);
-        if (!reply.sent) {
-          reply.code(500).send({ 
-            error: 'Stream error',
-            details: err.message 
-          });
+        if (!reply.sent) {          reply.code(500).send({
+          error: 'Stream error',
+          details: err.message
+        });
         }
       });
 
@@ -81,11 +77,9 @@ const searchController = {
           error: 'External search service unavailable',
           details: 'Could not connect to search service'
         });
-      }
-
-      return reply.code(500).send({ 
-        error: 'Search service error', 
-        details: error.message 
+      }      return reply.code(500).send({
+        error: 'Search service error',
+        details: error.message
       });
     }
   },
@@ -241,12 +235,10 @@ const searchController = {
           encoded: encodeURIComponent(searchTerm)
         },
         data: response
-      });
-
-    } catch (error) {
+      });    } catch (error) {
       console.error('Error searching propositions:', {
         error: error.message,
-        searchTerm,
+        searchTerm: request.params?.searchTerm || 'unknown',
       });
 
       if (error.code === 'ECONNREFUSED') {
