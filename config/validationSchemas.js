@@ -271,12 +271,12 @@ const structureSchemas = {
 /**
  * Schémas de validation pour les notifications
  */
-const notificationSchemas = {
-  createNotification: S.object()
+const notificationSchemas = {  createNotification: S.object()
+    .prop('title', S.string().minLength(1).maxLength(200).required())
     .prop('message', S.string().minLength(1).maxLength(500).required())
     .prop('type', commonSchemas.notificationType.default('info'))
     .prop('userId', commonSchemas.uuid.required())
-    .required(['message', 'userId'])
+    .required(['title', 'message', 'userId'])
     .additionalProperties(false),
     
   notificationParams: S.object()

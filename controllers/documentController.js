@@ -336,10 +336,9 @@ const documentController = {
         console.log(
           "Creating approval notification for user:",
           document.userId
-        );
-
-        await createNotification({
+        );        await createNotification({
           userId: document.userId,
+          title: "Document Approved",
           message: `Le document ${documentId} a été approuvé.`,
           type: "document_approved",
         });
@@ -1435,11 +1434,10 @@ const documentController = {
           UserDestinatorName: targetUser.NomUser,
         },
         { transaction: t }
-      );
-
-      // Create notification for the target user
+      );      // Create notification for the target user
       await createNotification({
         userId: targetUser.idUser,
+        title: "Document Rejected",
         message: `Document "${document.Title}" has been rejected and requires your attention.`,
         type: "document_rejected",
       });
@@ -1481,6 +1479,147 @@ const documentController = {
     } catch (error) {
       await t.rollback();
       console.error("Error rejecting document:", error);
+      return reply.status(500).send({
+        success: false,
+        error: "Internal Server Error",
+        message: error.message,
+      });
+    }
+  },
+  getRejectedDocuments: async (request, reply) => {
+    try {
+      // Get user information from authenticated user
+      const userId = request.user.idUser;
+      const user = await User.findOne({
+        where: { idUser: userId },
+        attributes: ['idUser', 'NomUser', 'PrenomUser', 'Email']
+      });
+
+      if (!user) {
+        return reply.status(404).send({
+          success: false,
+          error: "User not found",
+        });
+      }
+
+      // Find rejected documents assigned to this user
+      const rejectedDocuments = await Document.findAll({
+        where: {
+          UserDestinatorName: user.NomUser,
+          status: 'rejected',
+          transferStatus: 'sent'
+        },
+        attributes: [
+          'idDocument',
+          'Title',
+          'etapeId',
+          'status',
+          'transferStatus',
+          'transferTimestamp',
+          'url',
+          'UserDestinatorName',
+          'createdAt',
+          'updatedAt'
+        ],
+        include: [
+          {
+            model: Commentaire,
+            as: 'commentaires',
+            include: [
+              {
+                model: User,
+                as: 'user',
+                attributes: ['idUser', 'NomUser', 'PrenomUser', 'Email']
+              }
+            ],
+            order: [['createdAt', 'DESC']]
+          },
+          {
+            model: File,
+            as: 'files',
+            attributes: ['idFile', 'documentId', 'fileName', 'filePath', 'fileType', 'fileSize', 'thumbnailPath', 'createdAt', 'updatedAt']
+          },
+          {
+            model: Etape,
+            as: 'etape',
+            attributes: ['idEtape', 'LibelleEtape', 'Description', 'sequenceNumber']
+          }
+        ],
+        order: [['transferTimestamp', 'DESC']]
+      });
+
+      // Process the documents to include additional information
+      const processedDocuments = rejectedDocuments.map(doc => {
+        // Find the rejection comment (usually the last one)
+        const rejectionComment = doc.commentaires.find(comment => 
+          comment.Contenu && (
+            comment.Contenu.toLowerCase().includes('rejet') ||
+            comment.Contenu.toLowerCase().includes('reject')
+          )
+        ) || doc.commentaires[0];
+
+        return {
+          documentId: doc.idDocument,
+          title: doc.Title,
+          status: doc.status,
+          transferStatus: doc.transferStatus,
+          rejectedAt: doc.transferTimestamp,
+          currentEtape: {
+            id: doc.etape?.idEtape,
+            name: doc.etape?.LibelleEtape,
+            description: doc.etape?.Description,
+            sequenceNumber: doc.etape?.sequenceNumber
+          },
+          rejectionReason: rejectionComment ? {
+            content: rejectionComment.Contenu,
+            rejectedBy: {
+              id: rejectionComment.user?.idUser,
+              name: rejectionComment.user?.NomUser,
+              fullName: `${rejectionComment.user?.PrenomUser} ${rejectionComment.user?.NomUser}`,
+              email: rejectionComment.user?.Email
+            },
+            rejectedAt: rejectionComment.createdAt
+          } : null,
+          allComments: doc.commentaires.map(comment => ({
+            id: comment.idComment,
+            content: comment.Contenu,
+            createdAt: comment.createdAt,
+            user: comment.user ? {
+              id: comment.user.idUser,
+              name: comment.user.NomUser,
+              fullName: `${comment.user.PrenomUser} ${comment.user.NomUser}`,
+              email: comment.user.Email
+            } : null
+          })),
+          files: doc.files.map(file => ({
+            id: file.idFile,
+            fileName: file.fileName,
+            filePath: file.filePath,
+            fileType: file.fileType,
+            fileSize: file.fileSize,
+            thumbnailPath: file.thumbnailPath,
+            createdAt: file.createdAt
+          })),
+          url: doc.url,
+          createdAt: doc.createdAt
+        };
+      });
+
+      return reply.send({
+        success: true,
+        message: `Found ${processedDocuments.length} rejected documents for ${user.NomUser}`,
+        count: processedDocuments.length,
+        user: {
+          id: user.idUser,
+          name: user.NomUser,
+          fullName: `${user.PrenomUser} ${user.NomUser}`,
+          email: user.Email
+        },
+        data: processedDocuments
+      });
+
+    } catch (error) {
+      console.error("Error fetching rejected documents:", error);
       return reply.status(500).send({
         success: false,
         error: "Internal Server Error",

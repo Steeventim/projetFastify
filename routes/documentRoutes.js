@@ -146,6 +146,62 @@ module.exports = async function (fastify, opts) {
     ]
   }, documentController.getReceivedDocuments);
 
+  // Get rejected documents for current user
+  fastify.get('/rejected', {
+    preHandler: [
+      authMiddleware.verifyToken,
+      authMiddleware.requireRole(['admin', 'user'])
+    ],
+    schema: {
+      response: {
+        200: {
+          type: 'object',
+          properties: {
+            success: { type: 'boolean' },
+            data: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  idDocument: { type: 'string' },
+                  Title: { type: 'string' },
+                  status: { type: 'string' },
+                  transferStatus: { type: 'string' },
+                  transferTimestamp: { type: 'string' },
+                  etape: {
+                    type: 'object',
+                    properties: {
+                      LibelleEtape: { type: 'string' },
+                      sequenceNumber: { type: 'number' }
+                    }
+                  },
+                  commentaires: {
+                    type: 'array',
+                    items: {
+                      type: 'object',
+                      properties: {
+                        Contenu: { type: 'string' },
+                        createdAt: { type: 'string' },
+                        user: {
+                          type: 'object',
+                          properties: {
+                            NomUser: { type: 'string' },
+                            PrenomUser: { type: 'string' },
+                            Email: { type: 'string' }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }, documentController.getRejectedDocuments);
+
   // Get latest document
   fastify.get('/latest-document', {
     preHandler: [
