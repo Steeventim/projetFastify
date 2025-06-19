@@ -54,6 +54,8 @@
     "migrate:fresh": "node scripts/runMigrations.js",
     "migrate:status": "sequelize-cli db:migrate:status",
     "migrate:specific": "npx sequelize-cli db:migrate --name",
+    "create-superadmin": "node scripts/createSuperAdmin.js",
+    "test-superadmin": "node scripts/testSuperAdminLogin.js",
     "seed": "sequelize-cli db:seed:all",
     "seed:undo:all": "sequelize-cli db:seed:undo:all",
     "lint": "eslint . --ext .js,.jsx,.ts,.tsx",
