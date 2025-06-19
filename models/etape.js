@@ -14,10 +14,8 @@ module.exports = (sequelize, DataTypes) => {
       validate: {
         notEmpty: true
       }
-    },
-
-    Description: {
-      type: DataTypes.STRING,
+    },    Description: {
+      type: DataTypes.TEXT,
       allowNull: true
     },
     Validation: {

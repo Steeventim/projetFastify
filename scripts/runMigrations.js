@@ -4,6 +4,9 @@ const util = require('util');
 const execPromise = util.promisify(exec);
 
 const migrations = [
+  // Extensions first
+  '20240217000000-add-uuid-extension.js',
+  
   // Base tables in correct order
   '20240101-create-structure.js',
   '20231010-update-structure.js',
@@ -12,9 +15,9 @@ const migrations = [
   '20240104-create-permission.js',
   '20240105-create-etape.js',
   '20240106-create-typeprojet.js',
-  '20231010-update-typeprojet.js',
-  '20240107-create-document.js',
-  '20231210000000-add-title-to-documents.js', // Add Title column right after document creation
+  '20231010-update-typeprojet.js',  '20240107-create-document.js',
+  '20231010_rename_label_to_title.js', // Rename label to Title right after document creation
+  '20231210000000-add-title-to-documents.js', // Add title to documents
   '20240108-create-commentaire.js',
   '20240109-create-signature.js',
   '20241230144642-create-files.js',
@@ -23,8 +26,8 @@ const migrations = [
   '20240110-create-user-roles.js',
   '20231213000000-create-type-projet.js',
   '20240112-drop-and-recreate-users-structure-fkey.js',
-  
-  // Document and file modifications
+    // Document and file modifications
+  // Skip 20240113-add-status-to-document.js because status is already in create-document
   '20240620000000-add-document-transfer-fields.js',
   '20241227121226-modify-status-in-documents.js',
   
@@ -53,12 +56,17 @@ const migrations = [
   '20250212092227-update-type-projet-columns.js',
   '20250212094343-create-user-roles.js',
   '20250217112937-add-timestamps-to-etape-type-projet.js',
+  '20250219131951-add-permissions-to-roles.js',
   '20250221084039-add-url-to-documents.js',
   '20250224000000-add-userdestinatorname-to-documents.js',
   '20250224083457-remove-content-from-documents.js',
-
   // Notifications
   '20250408053114-create-notifications.js',
+  '20250612000000-add-type-to-notifications.js',
+  //'20250612115032-add-type-column-to-notifications.js',
+
+  // Latest fixes (June 2025)
+  '20250618122000-change-etape-description-to-text.js',
 ];
 
 async function dropAllTables() {
@@ -86,9 +94,16 @@ async function runMigration(migration) {
     const command = `npx sequelize-cli db:migrate --name ${migration} --migrations-path migrations --config config/config.js`;
     await execPromise(command);
     console.log(`Successfully ran migration: ${migration}`);
+    return true;
   } catch (error) {
-    console.error(`Error running migration ${migration}:`, error.message);
-    throw error;
+    // Check if it's a "migration not pending" error which we can safely ignore
+    if (error.message.includes('Migration is not pending')) {
+      console.log(`Migration ${migration} is already applied, skipping`);
+      return true;
+    } else {
+      console.error(`Error running migration ${migration}:`, error.message);
+      return false;
+    }
   }
 }
 
@@ -99,13 +114,23 @@ async function runMigrations() {
 
     // Run migrations one by one in order
     console.log('Running migrations in order...');
+    let failedMigrations = [];
+    
     for (const migration of migrations) {
-      await runMigration(migration);
+      const success = await runMigration(migration);
+      if (!success) {
+        failedMigrations.push(migration);
+      }
     }
     
-    console.log('All migrations completed successfully');
+    if (failedMigrations.length === 0) {
+      console.log('All migrations completed successfully');
+    } else {
+      console.warn(`Migrations completed with ${failedMigrations.length} failures:`);
+      failedMigrations.forEach(migration => console.warn(`- ${migration}`));
+    }
   } catch (error) {
-    console.error('Migration failed:', error.message);
+    console.error('Migration process failed:', error.message);
     process.exit(1);
   }
 }

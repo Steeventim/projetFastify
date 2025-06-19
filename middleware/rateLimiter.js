@@ -4,7 +4,7 @@ const rateLimit = require('fastify-rate-limit');
 const loginLimiter = {
   global: false,
   max: 50, // Limit each IP to 5 login requests per window
-  timeWindow: '15 minutes',
+  timeWindow: '10 minutes',
   errorResponse: {
     statusCode: 429,
     error: 'Too Many Requests',

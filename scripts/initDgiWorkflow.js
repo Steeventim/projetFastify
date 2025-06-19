@@ -4,7 +4,32 @@ const { v4: uuidv4 } = require('uuid');
 
 /**
  * Script d'initialisation du workflow DGI
- * Crée les rôles, le type de projet et les étapes pour le processus de recouvrement DGI
+ * 
+ * USE CASE: Transmission et Validation d'un Document de Recouvrement à la DGI
+ * 
+ * ACTEURS PRINCIPAUX:
+ * - Utilisateur Secrétariat (Scanneur ou Agent de recherche)
+ * - Directeur Général des Impôts (DGI)
+ * - Directeur du Recouvrement (DIR)
+ * - Sous-directeur
+ * - Cadre responsable du recouvrement
+ * - Système (Application BPM avec moteur de recherche)
+ * 
+ * WORKFLOW EN 5 ÉTAPES:
+ * 1. Saisie/Scan Initial - Agent secrétariat scanne/recherche et indexe le document
+ * 2. Validation DGI - DGI valide et annote avec stylet, transmission au DIR
+ * 3. Analyse DIR - Directeur Recouvrement analyse, annote et quote au sous-directeur
+ * 4. Traitement Sous-Directeur - Sous-directeur annote et quote au collaborateur
+ * 5. Traitement Collaborateur - Cadre élabore réponse, validation/rejet avec chemin inverse
+ * 
+ * FLUX ALTERNATIFS:
+ * - Rejet: Le document reprend le chemin inverse jusqu'à signature du DGI
+ * - Validation: Projet de réponse adressé au DGI pour signature
+ * - Timeout: Transmission automatique au N+1 si délai dépassé
+ * 
+ * BÉNÉFICES:
+ * - Suivi temps réel, traçabilité complète, réduction risques
+ * - Centralisation décisions, fluidification circuit, horodatage/signature numérique
  */
 
 async function initDgiWorkflow() {
@@ -15,37 +40,36 @@ async function initDgiWorkflow() {
 
     // 1. Création des rôles DGI
     console.log('📋 Création des rôles DGI...');
-    
-    const roles = [
+      const roles = [
       {
         name: 'secretariat_scanneur',
-        description: 'Agent du secrétariat - Saisie et scan des documents',
+        description: 'Agent du secrétariat - Scanneur ou Agent de recherche',
         isSystemRole: false,
-        permissions: ['document:create', 'document:search', 'document:upload']
+        permissions: ['document:create', 'document:search', 'document:upload', 'document:index']
       },
       {
         name: 'dgi_directeur',
-        description: 'Directeur Général des Impôts',
+        description: 'Directeur Général des Impôts (DGI)',
         isSystemRole: false,
-        permissions: ['document:read', 'document:validate', 'document:annotate', 'document:forward']
+        permissions: ['document:read', 'document:validate', 'document:annotate', 'document:forward', 'document:sign']
       },
       {
         name: 'directeur_recouvrement',
-        description: 'Directeur du Recouvrement',
+        description: 'Directeur du Recouvrement (DIR)',
         isSystemRole: false,
-        permissions: ['document:read', 'document:validate', 'document:annotate', 'document:forward']
+        permissions: ['document:read', 'document:validate', 'document:annotate', 'document:forward', 'document:quote']
       },
       {
         name: 'sous_directeur',
         description: 'Sous-directeur',
         isSystemRole: false,
-        permissions: ['document:read', 'document:validate', 'document:annotate', 'document:forward']
+        permissions: ['document:read', 'document:validate', 'document:annotate', 'document:forward', 'document:quote']
       },
       {
         name: 'cadre_recouvrement',
         description: 'Cadre responsable du recouvrement',
         isSystemRole: false,
-        permissions: ['document:read', 'document:process', 'document:annotate', 'document:validate', 'document:reject']
+        permissions: ['document:read', 'document:process', 'document:annotate', 'document:validate', 'document:reject', 'document:elaborate_response']
       }
     ];
 
@@ -79,39 +103,37 @@ async function initDgiWorkflow() {
 
     // 3. Création des étapes du workflow
     console.log('🔄 Création des étapes du workflow...');
-    
-    const etapes = [
+      const etapes = [
       {
         LibelleEtape: 'Saisie/Scan Initial',
-        Description: 'Saisie ou scan du document par le secrétariat',
+        Description: 'L\'agent du secrétariat scanne ou recherche un document existant via le moteur de recherche intégré. Le document est identifié, indexé et injecté dans le workflow BPM.',
         sequenceNumber: 1,
         Validation: false,
         roleId: createdRoles.secretariat_scanneur.idRole
       },
       {
         LibelleEtape: 'Validation DGI',
-        Description: 'Validation et annotation par le Directeur Général des Impôts',
+        Description: 'Le document est transmis automatiquement au poste de la DGI, accompagné des métadonnées. Le DGI porte des annotations sur le fichier avec un stylet avant transmission au Directeur du Recouvrement.',
         sequenceNumber: 2,
         Validation: true,
         roleId: createdRoles.dgi_directeur.idRole
       },
       {
         LibelleEtape: 'Analyse Directeur Recouvrement',
-        Description: 'Analyse et orientation par le Directeur du Recouvrement',
+        Description: 'Le Directeur du recouvrement analyse le fichier, prend connaissance des annotations du DGI. Quote le dossier au Sous-directeur en y apportant des mentions et des orientations avec un stylet.',
         sequenceNumber: 3,
         Validation: true,
         roleId: createdRoles.directeur_recouvrement.idRole
       },
       {
         LibelleEtape: 'Traitement Sous-Directeur',
-        Description: 'Annotation et quotation par le Sous-directeur',
+        Description: 'Le Sous-directeur prend connaissance des orientations du DGI et du Directeur du Recouvrement avant de porter ses propres annotations et de quoter le dossier au collaborateur chargé de le traiter.',
         sequenceNumber: 4,
         Validation: true,
         roleId: createdRoles.sous_directeur.idRole
-      },
-      {
+      },      {
         LibelleEtape: 'Traitement Collaborateur',
-        Description: 'Analyse finale et élaboration de la réponse par le cadre',
+        Description: 'Le cadre responsable reçoit le document, l\'analyse et élabore un projet de réponse. Ce projet est transmis à la hiérarchie pour validation ou rejet. Le dossier suit le chemin inverse jusqu\'au DGI.',
         sequenceNumber: 5,
         Validation: true,
         roleId: createdRoles.cadre_recouvrement.idRole
