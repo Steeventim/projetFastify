@@ -30,6 +30,7 @@ const searchRoutes = require("./routes/searchRoutes");
 const documentRoutes = require("./routes/documentRoutes");
 const etapeTypeProjetRoutes = require("./routes/etapeTypeProjetRoutes");
 const notificationRoutes = require("./routes/notificatonRoutes");
+const dashboardRoutes = require("./routes/dashboardRoutes");
 
 // Register plugins in correct order
 fastify.register(cors, {
@@ -41,17 +42,19 @@ fastify.register(cors, {
   maxAge: 86400,
 });
 
-// Register helmet for security headers
-fastify.register(require("@fastify/helmet"), {
-  contentSecurityPolicy: {
-    directives: {
-      defaultSrc: ["'self'"],
-      styleSrc: ["'self'", "'unsafe-inline'"],
-      scriptSrc: ["'self'"],
-      imgSrc: ["'self'", "data:", "https:"],
-    },
-  },
-});
+// Register static files plugin - temporairement désactivé
+// fastify.register(require('@fastify/static'), {
+//   root: require('path').join(__dirname, 'public'),
+//   prefix: '/public/'
+// });
+
+// Register view engine for serving HTML files - temporairement désactivé
+// fastify.register(require('@fastify/view'), {
+//   engine: {
+//     handlebars: require('handlebars')
+//   },
+//   root: require('path').join(__dirname, 'views')
+// });
 
 // Register reply-from before multipart
 fastify.register(replyFrom);
@@ -75,6 +78,11 @@ fastify.register(require("@fastify/multipart"), {
 // Add health check route - must be before other route registrations
 fastify.get("/health", async (request, reply) => {
   return reply.send({ status: "ok", timestamp: new Date().toISOString() });
+});
+
+// Add favicon route to prevent 404 errors
+fastify.get("/favicon.ico", async (request, reply) => {
+  return reply.status(204).send();
 });
 
 // Add detailed health check route
@@ -116,6 +124,7 @@ fastify.register(etapeTypeProjetRoutes);
 fastify.register(documentRoutes);
 fastify.register(initializationRoutes);
 fastify.register(notificationRoutes);
+fastify.register(dashboardRoutes);
 
 // Create a server instance for WebSocket
 const server = require("http").createServer(fastify.server);

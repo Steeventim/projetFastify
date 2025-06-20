@@ -1,4 +1,3 @@
-const fastify = require('fastify')({ logger: true });
 const searchController = require('../controllers/searchController');
 
 async function searchRoutes(fastify, options) {
