@@ -1,4 +1,3 @@
-const fastify = require('fastify')({ logger: true });
 const searchController = require('../controllers/searchController');
 
 async function searchRoutes(fastify, options) {
@@ -90,7 +89,6 @@ async function searchRoutes(fastify, options) {
       });
     }
   });
-
   // Convert to GET route only for highlightera2
   fastify.get('/highlightera2/:documentName/:searchTerm', {
     schema: {
@@ -105,10 +103,26 @@ async function searchRoutes(fastify, options) {
     }
   }, async (request, reply) => {
     try {
+      // Add detailed logging for better debugging
+      console.log('Received highlightera2 request with:', {
+        params: request.params,
+        url: request.url,
+        method: request.method,
+        headers: request.headers
+      });
+      
+      // Ensure parameters are available before processing
+      if (!request.params.documentName || !request.params.searchTerm) {
+        return reply.code(400).send({
+          error: 'Bad Request',
+          message: 'Document name and search term are required'
+        });
+      }
+      
       await searchController.highlightDocument(request, reply);
       return reply;
     } catch (error) {
-      fastify.log.error(error);
+      fastify.log.error(`Error in highlightera2 route: ${error.message}`);
       return reply.status(500).send({ error: 'Internal Server Error' });
     }
   });

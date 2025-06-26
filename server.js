@@ -56,11 +56,13 @@ fastify.register(require("@fastify/helmet"), {
 // Register reply-from before multipart
 fastify.register(replyFrom);
 
-// Add rate limiter
+// Add rate limiter - currently disabled
+/* 
 fastify.register(require("@fastify/rate-limit"), {
   max: 100,
   timeWindow: "15 minutes",
 });
+*/
 
 // Add multipart support after reply-from
 fastify.register(require("@fastify/multipart"), {
@@ -108,7 +110,7 @@ fastify.get("/health/detailed", async (request, reply) => {
 fastify.register(userRoutes);
 fastify.register(fastifyRoleRoutes);
 fastify.register(etapeRoutes);
-fastify.register(searchRoutes);
+fastify.register(searchRoutes, { prefix: '' });  // No prefix for search routes
 fastify.register(projetRoutes);
 fastify.register(structureRoutes);
 fastify.register(commentaireRoutes);

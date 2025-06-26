@@ -256,13 +256,37 @@ const searchController = {
         details: error.message
       });
     }
-  },
-
-  highlightDocument: async (request, reply) => {
+  },  highlightDocument: async (request, reply) => {
     const t = await sequelize.transaction();
 
     try {
-      const { documentName, searchTerm } = request.params;
+      let { documentName, searchTerm } = request.params;
+      
+      // Make sure the document name is properly decoded
+      // Some URLs might be double-encoded, so decode multiple times if needed
+      try {
+        documentName = decodeURIComponent(documentName);
+        // Check if still contains encoded characters
+        if (documentName.includes('%')) {
+          documentName = decodeURIComponent(documentName);
+        }
+      } catch (e) {
+        console.warn('Error decoding document name:', e.message);
+        // Continue with the original name if decoding fails
+      }
+      
+      // Also ensure searchTerm is properly decoded
+      try {
+        searchTerm = decodeURIComponent(searchTerm);
+      } catch (e) {
+        console.warn('Error decoding search term:', e.message);
+      }
+      
+      console.log('Processing document request with params:', {
+        documentName,
+        searchTerm
+      });
+      
       const space = ' ' + searchTerm.toLowerCase();
       const lowerSearchTerm = space;
       const baseUrl = process.env.BASE_URL || 'http://localhost:3003';

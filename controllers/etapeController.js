@@ -23,12 +23,21 @@ const etapeController = {
     console.log('Incoming request body:', request.body);
     console.log('Incoming files:', request.files);
 
-    const t = await sequelize.transaction();
-    try {
-      const { documentId, userId, commentaire, UserDestinatorName, nextEtapeName, files: bodyFiles = [] } = request.body;
+    const t = await sequelize.transaction();    try {
+      const { documentId, userId, comments: rawComments, UserDestinatorName, nextEtapeName, files: bodyFiles = [] } = request.body;
 
-      // Convert commentaire to comments array
-      const comments = commentaire ? [{ content: commentaire }] : [];
+      // Process comments - handle both string format and array format
+      let comments = [];
+      if (rawComments) {
+        if (Array.isArray(rawComments)) {
+          comments = rawComments;
+        } else if (typeof rawComments === 'string') {
+          comments = [{ content: rawComments }];
+        } else if (typeof rawComments === 'object') {
+          // Handle case where comments might be sent as an object with numbered keys
+          comments = Object.values(rawComments);
+        }
+      }
 
       // Validate inputs
       if (!isUUID(documentId) || !isUUID(userId)) {
@@ -62,24 +71,26 @@ const etapeController = {
           success: false,
           message: "Etape or Document not found",
         });
-      }
-
-      // Process comments
-      console.log(`Processing ${comments.length} comments`);
+      }      // Process comments
+      console.log(`Processing comments:`, comments);
       const createdComments = [];
-      for (const comment of comments) {
-        if (comment.content?.trim()) {
-          console.log('Creating comment for document:', documentId);
-          const newComment = await Commentaire.create({
-            idComment: uuidv4(),
-            documentId: document.idDocument,
-            userId,
-            Contenu: comment.content,
-            createdAt: new Date(),
-          }, { transaction: t });
-          createdComments.push(newComment);
-          console.log('Comment created:', newComment.idComment);
+      if (comments && comments.length > 0) {
+        for (const comment of comments) {
+          if (comment.content?.trim()) {
+            console.log('Creating comment for document:', documentId);
+            const newComment = await Commentaire.create({
+              idComment: uuidv4(),
+              documentId: document.idDocument,
+              userId,
+              Contenu: comment.content,
+              createdAt: new Date(),
+            }, { transaction: t });
+            createdComments.push(newComment);
+            console.log('Comment created:', newComment.idComment);
+          }
         }
+      } else {
+        console.log('No comments to process');
       }
 
       // Process files
