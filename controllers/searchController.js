@@ -3,7 +3,27 @@ const { Document } = require('../models');
 const { v4: uuidv4, validate: isUUID } = require('uuid');
 const searchService = require('../services/searchService');
 const PDFKit = require('pdfkit');
-const { sequelize } = require('../models'); // Assuming sequelize is exported from models
+const { sequelize } = require('../models');
+
+// Fonction utilitaire pour créer ou mettre à jour un document
+const createOrUpdateDocument = async (document, documentName, documentUrl, transaction) => {
+  if (!document) {
+    return await Document.create({
+      idDocument: uuidv4(),
+      Title: documentName,
+      url: documentUrl,
+      status: 'indexed',
+      transferStatus: 'pending',
+      createdAt: new Date(),
+      updatedAt: new Date()
+    }, { transaction });
+  } else {
+    await document.update({
+      updatedAt: new Date()
+    }, { transaction });
+    return document;
+  }
+};
 
 const searchController = {
   searchDocumentsWithoutName: async (request, reply) => {
@@ -14,70 +34,47 @@ const searchController = {
     }
 
     try {
-      const apiBaseUrl = 'http://localhost:3000';
-      const searchUrl = `${apiBaseUrl}/api/v1/pdf/highlight/${encodeURIComponent(searchTerm)}`;
-      console.log('Attempting API call to:', searchUrl);
-
-      const response = await axios({
-        method: 'get',
-        url: searchUrl,
-        responseType: 'stream',
-        timeout: 30000,
-        maxContentLength: Infinity,
-        maxBodyLength: Infinity,
-        headers: {
-          'Accept': 'application/pdf'
-        },
-        validateStatus: function(status) {
-          return status >= 200 && status < 500;
-        }
-      });
-
-      if (response.status === 404) {        return reply.code(404).send({
-        error: 'Document not found',
-        searchTerm
-      });
-      }
-
-      if (response.status !== 200) {        return reply.code(response.status).send({
-        error: 'Unexpected API response',
-        status: response.status
-      });
-      }
-
-      // Set headers for streaming response
-      reply.raw.writeHead(200, {
-        'Content-Type': 'application/pdf',
-        'Content-Disposition': `attachment; filename="search-${searchTerm}.pdf"`,
-        'Transfer-Encoding': 'chunked'
-      });
-
-      // Handle stream errors
-      response.data.on('error', (err) => {
-        console.error('Stream error:', err);
-        if (!reply.sent) {          reply.code(500).send({
-          error: 'Stream error',
-          details: err.message
+      // Use internal search service instead of external API
+      console.log('Searching for term without specific document:', searchTerm);
+      
+      const searchResponse = await searchService.searchWithHighlight(searchTerm);
+      
+      if (!searchResponse || searchResponse.hits.total.value === 0) {
+        return reply.code(404).send({
+          success: false,
+          error: 'Not Found',
+          message: 'No results found for the search term',
+          searchTerm
         });
-        }
-      });
+      }
 
-      // Pipe the response stream directly to the reply
-      return response.data.pipe(reply.raw);
+      return reply.send({
+        success: true,
+        searchTerm,
+        totalResults: searchResponse.hits.total.value,
+        data: searchResponse.hits.hits.map(hit => ({
+          filename: hit._source.file?.filename || 'Unknown',
+          content: hit._source.content || '',
+          highlight: hit.highlight || null,
+          score: hit._score
+        }))
+      });
 
     } catch (error) {
-      console.error('API Call Failed:', {
+      console.error('Search error:', {
         message: error.message,
-        code: error.code,
-        url: error.config?.url
+        searchTerm,
+        stack: error.stack
       });
 
       if (error.code === 'ECONNREFUSED') {
         return reply.code(503).send({
-          error: 'External search service unavailable',
-          details: 'Could not connect to search service'
+          error: 'Search service unavailable',
+          details: 'Could not connect to Elasticsearch'
         });
-      }      return reply.code(500).send({
+      }
+      
+      return reply.code(500).send({
         error: 'Search service error',
         details: error.message
       });
@@ -92,100 +89,47 @@ const searchController = {
     }
 
     try {
-      const baseUrl = 'http://localhost:3000';
-      const encodedDocName = encodeURIComponent(documentName);
-      const encodedSearchTerm = encodeURIComponent(searchTerm);
-
-      // Get highlighted PDF first
-      const pdfUrl = `${baseUrl}/highlightera2/${encodedDocName}/${encodedSearchTerm}`;
-      console.log('Calling external API:', pdfUrl);
-
-      try {
-        const response = await axios.get(pdfUrl, { 
-          responseType: 'stream',
-          timeout: 10000,
-          headers: {
-            'Accept': 'application/pdf'
-          },
-          // Add validation for response status
-          validateStatus: function(status) {
-            return status >= 200 && status < 500;
-          }
+      // Use internal search service instead of external API
+      console.log('Processing search for document:', documentName, 'with term:', searchTerm);
+      
+      // Search using the internal search service
+      const searchResponse = await searchService.searchWithHighlight(searchTerm);
+      
+      if (!searchResponse || searchResponse.hits.total.value === 0) {
+        return reply.code(404).send({
+          success: false,
+          error: 'Not Found',
+          message: 'No results found for the search term',
+          documentName,
+          searchTerm
         });
-
-        if (response.status === 404) {
-          return reply.code(404).send({ 
-            success: false,
-            error: 'Not Found',
-            message: 'Document not found or search term not found in document',
-            details: {
-              documentName,
-              searchTerm
-            }
-          });
-        }
-
-        // Modify URL construction to include search term
-        const documentUrl = new URL(`/documents/${encodedDocName}/search/${encodedSearchTerm}`, baseUrl).toString();
-        
-        // Find or create document with UUID validation
-        let document = await Document.findOne({
-          where: { url: documentUrl }
-        });
-
-        if (!document) {
-          const newId = uuidv4();
-          // Validate UUID format
-          if (!isUUID(newId)) {
-            throw new Error('Invalid UUID generated');
-          }
-
-          document = await Document.create({
-            idDocument: newId,
-            Title: documentName,
-            url: documentUrl,
-            status: 'indexed',
-            transferStatus: 'pending',
-            createdAt: new Date(),
-            updatedAt: new Date()
-          });
-        } else {
-          // Validate existing document UUID
-          if (!isUUID(document.idDocument)) {
-            console.warn('Invalid UUID format found in database:', document.idDocument);
-            return reply.code(500).send({
-              success: false,
-              error: 'Data Integrity Error',
-              message: 'Invalid document ID format in database'
-            });
-          }
-        }
-
-        // Set response headers
-        reply.type('application/pdf');
-        reply.header('Document-Id', document.idDocument);
-        reply.header('Document-Url', documentUrl);
-        reply.header('Document-Status', document.status);
-
-        return reply.send(response.data);
-
-      } catch (apiError) {
-        console.error('External API error:', {
-          url: pdfUrl,
-          status: apiError.response?.status,
-          message: apiError.message
-        });
-
-        if (apiError.response?.status === 404) {
-          return reply.code(404).send({
-            success: false,
-            error: 'Not Found',
-            message: 'Document not found in external service'
-          });
-        }
-
-        throw apiError; // Re-throw for general error handling
       }
+
+      // Find or filter documents by name if needed
+      const relevantHits = searchResponse.hits.hits.filter(hit => 
+        hit._source.filename && hit._source.filename.includes(documentName)
+      );
+
+      if (relevantHits.length === 0) {
+        return reply.code(404).send({
+          success: false,
+          error: 'Not Found',
+          message: 'Document not found in search results',
+          documentName,
+          searchTerm
+        });
+      }
+
+      return reply.send({
+        success: true,
+        message: 'Search completed successfully',
+        documentName,
+        searchTerm,
+        data: {
+          total: relevantHits.length,
+          hits: relevantHits
+        }
+      });
 
     } catch (error) {
       console.error('Search error:', {
@@ -235,7 +179,8 @@ const searchController = {
           encoded: encodeURIComponent(searchTerm)
         },
         data: response
-      });    } catch (error) {
+      });
+    } catch (error) {
       console.error('Error searching propositions:', {
         error: error.message,
         searchTerm: request.params?.searchTerm || 'unknown',
@@ -296,13 +241,15 @@ const searchController = {
       const encodedSearchTerm = encodeURIComponent(searchTerm);
       const documentUrl = new URL(`/documents/${encodedDocName}/search/${encodedSearchTerm}`, baseUrl).toString();
 
+      console.log('Generated URL:', documentUrl);
+
       // Check if document already exists with this URL
       let document = await Document.findOne({
         where: { url: documentUrl },
         transaction: t
       });
 
-      const searchResponse = await searchService.searchWithHighlight(lowerSearchTerm);
+      const searchResponse = await searchService.searchWithHighlight(normalizedSearchTerm);
 
       if (!searchResponse || searchResponse.hits.hits.length === 0) {
         await t.rollback();
@@ -313,76 +260,104 @@ const searchController = {
         });
       }
 
-      const pdfBytes = await searchService.searchDocumentWithHighlight(documentName, searchTerm);
+      console.log('Calling generateDocumentPreview...');
+      let previewResult = null;
+      try {
+        previewResult = await searchService.generateDocumentPreview(documentName, normalizedSearchTerm);
+        console.log('generateDocumentPreview result:', previewResult ? 'Preview generated' : 'No preview');
+      } catch (searchError) {
+        console.error('Error in generateDocumentPreview:', searchError.message);
+        previewResult = null; // Force fallback
+      }
 
-      if (!pdfBytes) {
-        const doc = new PDFKit();
-        reply.type('application/pdf');
-        doc.pipe(reply.raw);
-
+      if (!previewResult) {
+        // Fallback: génération d'une prévisualisation basique
         const content = searchResponse.hits.hits[0]._source.content;
-        const regex = new RegExp(`(${searchTerm})`, 'gi');
-        const parts = content.split(regex);
-
-        parts.forEach(part => {
-          if (part.toLowerCase() === lowerSearchTerm) {
-            doc.fillColor('red').text(part, { continued: true });
-          } else {
-            doc.fillColor('black').text(part, { continued: true });
-          }
-        });
-
-        if (!document) {
-          document = await Document.create({
-            idDocument: uuidv4(),
-            Title: documentName,
-            url: documentUrl,
-            status: 'indexed',
-            transferStatus: 'pending',
-            createdAt: new Date(),
-            updatedAt: new Date()
-          }, { transaction: t });
-        } else {
-          await document.update({
-            updatedAt: new Date()
-          }, { transaction: t });
-        }
-
-        await t.commit();
-        doc.end();
-        return;
+        const matchCount = (content.match(new RegExp(normalizedSearchTerm, 'gi')) || []).length;
+        
+        // Extraire le physicalPath depuis Elasticsearch si disponible
+        const elasticsearchDoc = searchResponse.hits.hits[0]._source;
+        const physicalPath = elasticsearchDoc.file?.path?.real || 
+                           elasticsearchDoc.path?.real || 
+                           elasticsearchDoc.file?.path || 
+                           'Document non trouvé localement';
+        
+        previewResult = {
+          documentInfo: {
+            filename: documentName,
+            totalPages: 'N/A',
+            physicalPath: physicalPath,
+            previewType: 'Elasticsearch Content'
+          },
+          searchInfo: {
+            searchTerm: searchTerm,
+            normalizedTerm: normalizedSearchTerm,
+            matchCount: matchCount,
+            timestamp: new Date().toISOString()
+          },
+          previewPages: [
+            {
+              pageNumber: 1,
+              content: content.substring(0, 500) + (content.length > 500 ? '...' : ''),
+              hasMatches: true,
+              matchHighlights: searchResponse.hits.hits[0].highlight?.content || []
+            }
+          ],
+          summary: `Prévisualisation générée à partir d'Elasticsearch. ${matchCount} occurrence(s) trouvée(s).`
+        };
       }
 
-      // If PDF exists and document record doesn't exist, create it
-      if (!document) {
-        document = await Document.create({
-          idDocument: uuidv4(),
-          Title: documentName,
-          url: documentUrl,
-          status: 'indexed',
-          transferStatus: 'pending',
-          createdAt: new Date(),
-          updatedAt: new Date()
-        }, { transaction: t });
-      } else {
-        await document.update({
-          updatedAt: new Date()
-        }, { transaction: t });
-      }
-
+      // Sauvegarder les métadonnées du document
+      document = await createOrUpdateDocument(document, documentName, documentUrl, t);
       await t.commit();
+
+      // Générer le PDF physique simplifié (uniquement pages avec correspondances)
+      console.log('Generating simplified PDF with only matching pages...');
+      const pdfBuffer = await searchService.generateStructuredPDF(previewResult, documentName, searchTerm);
+
+      // Configurer la réponse pour afficher le PDF dans le navigateur
+      const filename = `${documentName}_recherche_${searchTerm}_${new Date().toISOString().split('T')[0]}.pdf`;
       reply.type('application/pdf');
-      return reply.send(Buffer.from(pdfBytes));
+      reply.header('Content-Disposition', `inline; filename="${filename}"`);
+      reply.header('Content-Length', pdfBuffer.length);
+
+      console.log(`=== highlightDocument END - PDF generated (${pdfBuffer.length} bytes) ===`);
+      return reply.send(pdfBuffer);
 
     } catch (error) {
       await t.rollback();
-      console.error('Error highlighting document:', error);
+      console.error('Error highlighting document:', {
+        error: error.message,
+        documentName,
+        searchTerm,
+        stack: error.stack,
+        timestamp: new Date().toISOString()
+      });
 
+      // Gestion spécifique des différents types d'erreurs
       if (error.message === 'Document not found') {
         return reply.code(404).send({
           success: false,
           error: 'Not Found',
-          message: 'Document not found'
+          message: 'Document not found',
+          documentName,
+          searchTerm
+        });
+      }
+      
+      if (error.name === 'SequelizeError') {
+        return reply.code(500).send({
+          success: false,
+          error: 'Database Error',
+          message: 'Failed to save document metadata'
+        });
+      }
+
+      if (error.code === 'ECONNREFUSED') {
+        return reply.code(503).send({
+          success: false,
+          error: 'Service Unavailable',
+          message: 'Search service is currently unavailable'
         });
       }
 
@@ -390,7 +365,7 @@ const searchController = {
         success: false,
         error: 'Internal Server Error',
         message: 'Failed to process document highlighting',
-        details: error.message
+        details: process.env.NODE_ENV === 'development' ? error.message : undefined
       });
     }
   }
