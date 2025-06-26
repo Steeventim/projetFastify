@@ -274,10 +274,8 @@ module.exports = async function (fastify, opts) {
       }
     }
   }, documentController.getLatestDocument);
-
-  // Reject document
-  fastify.post('/documents/:documentId/reject', {
-    schema: {
+  // Reject document - Note: Rejection is not allowed at sequence number 2
+  fastify.post('/documents/:documentId/reject', {    schema: {
       body: {
         type: 'object',
         required: ['userId'],
@@ -287,15 +285,13 @@ module.exports = async function (fastify, opts) {
             type: 'array',
             items: {
               type: 'object',
-              required: ['content'],
               properties: {
                 content: { type: 'string', minLength: 1 }
               }
             }
           }
         }
-      },
-      response: {
+      },      response: {
         200: {
           type: 'object',
           properties: {
@@ -316,6 +312,14 @@ module.exports = async function (fastify, opts) {
                 files: { type: 'array' }
               }
             }
+          }
+        },
+        403: {
+          type: 'object',
+          properties: {
+            success: { type: 'boolean' },
+            message: { type: 'string' },
+            details: { type: 'string' }
           }
         }
       }

@@ -1,8 +1,7 @@
-const axios = require('axios');
+// Import necessary modules
 const { Document } = require('../models');
-const { v4: uuidv4, validate: isUUID } = require('uuid');
+const { v4: uuidv4 } = require('uuid');
 const searchService = require('../services/searchService');
-const PDFKit = require('pdfkit');
 const { sequelize } = require('../models');
 
 // Fonction utilitaire pour créer ou mettre à jour un document
@@ -102,13 +101,10 @@ const searchController = {
           message: 'No results found for the search term',
           documentName,
           searchTerm
-        });
-      }
-
-      // Find or filter documents by name if needed
-      const relevantHits = searchResponse.hits.hits.filter(hit => 
-        hit._source.filename && hit._source.filename.includes(documentName)
-      );
+        });      }      // Find or filter documents by name if needed
+      const relevantHits = searchResponse.hits.hits.filter(hit => {
+        return hit._source.filename && hit._source.filename.includes(documentName);
+      });
 
       if (relevantHits.length === 0) {
         return reply.code(404).send({
@@ -135,11 +131,10 @@ const searchController = {
       console.error('Search error:', {
         message: error.message,
         documentName,
-        searchTerm,
-        stack: error.stack
+        searchTerm,        stack: error.stack
       });
 
-      return reply.code(503).send({ 
+      return reply.code(503).send({
         success: false,
         error: 'Search Service Error',
         message: 'Unable to process search request',
@@ -232,8 +227,8 @@ const searchController = {
         searchTerm
       });
       
-      const space = ' ' + searchTerm.toLowerCase();
-      const lowerSearchTerm = space;
+      // Normalize search term for processing      // Normalize search term for processing
+      const normalizedSearchTerm = searchTerm.toLowerCase().trim();
       const baseUrl = process.env.BASE_URL || 'http://localhost:3003';
 
       // Construct document URL with search term
@@ -241,10 +236,8 @@ const searchController = {
       const encodedSearchTerm = encodeURIComponent(searchTerm);
       const documentUrl = new URL(`/documents/${encodedDocName}/search/${encodedSearchTerm}`, baseUrl).toString();
 
-      console.log('Generated URL:', documentUrl);
-
-      // Check if document already exists with this URL
-      let document = await Document.findOne({
+      console.log('Generated URL:', documentUrl);      // Check if document already exists with this URL
+      const document = await Document.findOne({
         where: { url: documentUrl },
         transaction: t
       });
@@ -268,19 +261,17 @@ const searchController = {
       } catch (searchError) {
         console.error('Error in generateDocumentPreview:', searchError.message);
         previewResult = null; // Force fallback
-      }
-
-      if (!previewResult) {
+      }      if (!previewResult) {
         // Fallback: génération d'une prévisualisation basique
         const content = searchResponse.hits.hits[0]._source.content;
         const matchCount = (content.match(new RegExp(normalizedSearchTerm, 'gi')) || []).length;
         
         // Extraire le physicalPath depuis Elasticsearch si disponible
         const elasticsearchDoc = searchResponse.hits.hits[0]._source;
-        const physicalPath = elasticsearchDoc.file?.path?.real || 
-                           elasticsearchDoc.path?.real || 
-                           elasticsearchDoc.file?.path || 
-                           'Document non trouvé localement';
+        const physicalPath = elasticsearchDoc.file?.path?.real ||
+                             elasticsearchDoc.path?.real ||
+                             elasticsearchDoc.file?.path ||
+                             'Document non trouvé localement';
         
         previewResult = {
           documentInfo: {
@@ -305,10 +296,8 @@ const searchController = {
           ],
           summary: `Prévisualisation générée à partir d'Elasticsearch. ${matchCount} occurrence(s) trouvée(s).`
         };
-      }
-
-      // Sauvegarder les métadonnées du document
-      document = await createOrUpdateDocument(document, documentName, documentUrl, t);
+      }      // Sauvegarder les métadonnées du document
+      await createOrUpdateDocument(document, documentName, documentUrl, t);
       await t.commit();
 
       // Générer le PDF physique simplifié (uniquement pages avec correspondances)
@@ -322,14 +311,12 @@ const searchController = {
       reply.header('Content-Length', pdfBuffer.length);
 
       console.log(`=== highlightDocument END - PDF generated (${pdfBuffer.length} bytes) ===`);
-      return reply.send(pdfBuffer);
-
-    } catch (error) {
+      return reply.send(pdfBuffer);    } catch (error) {
       await t.rollback();
       console.error('Error highlighting document:', {
         error: error.message,
-        documentName,
-        searchTerm,
+        documentName: request.params?.documentName || 'unknown',
+        searchTerm: request.params?.searchTerm || 'unknown',
         stack: error.stack,
         timestamp: new Date().toISOString()
       });
@@ -340,8 +327,8 @@ const searchController = {
           success: false,
           error: 'Not Found',
           message: 'Document not found',
-          documentName,
-          searchTerm
+          documentName: request.params?.documentName,
+          searchTerm: request.params?.searchTerm
         });
       }
       

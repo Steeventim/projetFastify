@@ -135,7 +135,7 @@ const documentController = {
       }
 
       const newComments = [];
-      if (comments && Array.isArray(comments)) {
+      if (comments && comments.length > 0) {
         for (const comment of comments) {
           if (comment.content?.trim()) {
             console.log('Creating comment:', {
@@ -352,7 +352,7 @@ const documentController = {
       }
 
       const newComments = [];
-      if (comments?.length) {
+      if (comments && comments.length > 0) {
         for (const comment of comments) {
           if (comment.content?.trim()) {
             const newComment = await Commentaire.create(
@@ -872,15 +872,14 @@ const documentController = {
         });
       }
 
-      const currentEtape = user.Roles[0].etapes[0];
-
-      const documents = await Document.findAll({
+      const currentEtape = user.Roles[0].etapes[0];      const documents = await Document.findAll({
         where: {
           [Sequelize.Op.or]: [
             { UserDestinatorName: user.NomUser },
             { etapeId: currentEtape.idEtape },
           ],
           transferStatus: ["sent", "received", "viewed"],
+          // No status filter to include both pending and rejected documents
         },
         attributes: [
           "idDocument",
@@ -945,9 +944,7 @@ const documentController = {
               },
               { transaction: t }
             );
-          }
-
-          return {
+          }          return {
             documentId: doc.idDocument,
             title: doc.Title,
             previousEtapeId,
@@ -958,19 +955,23 @@ const documentController = {
             transferTimestamp: doc.transferTimestamp,
             url: doc.url,
             destinator: doc.UserDestinatorName,
-            comments:
-              doc.commentaires?.map((c) => ({
+            comments:              doc.commentaires?.map((c) => ({
                 id: c.idComment,
                 content: c.Contenu,
                 createdAt: c.createdAt,
                 user: c.user
                   ? {
-                      id: c.user.idUser,
-                      name: c.user.NomUser,
-                    }
+                    id: c.user.idUser,
+                    name: c.user.NomUser,
+                  }
                   : null,
               })) || [],
             files: doc.files || [],
+            etape: doc.etape ? {
+              id: doc.etape.idEtape,
+              name: doc.etape.LibelleEtape,
+              sequenceNumber: doc.etape.sequenceNumber
+            } : null
           };
         })
       );
@@ -992,9 +993,9 @@ const documentController = {
       });
     }
   },
-
   approveDocument: async (request, reply) => {
-    const { documentId, userId, etapeId, comments, files } = request.body;
+    const { documentId, userId, etapeId, comments } = request.body;
+    const files = request.files || {};
 
     const t = await sequelize.transaction();
 
@@ -1012,11 +1013,10 @@ const documentController = {
         return reply.status(404).send({
           error: "Not Found",
           message: "Document not found",
-        });
-      }
+        });      }
 
       const newComments = [];
-      if (comments?.length) {
+      if (comments && comments.length > 0) {
         for (const comment of comments) {
           if (comment.content?.trim()) {
             const newComment = await Commentaire.create(
@@ -1211,15 +1211,23 @@ const documentController = {
           success: false,
           message: "Document not found",
         });
-      }
-
-      // Get current etape to determine the previous step in workflow
+      }      // Get current etape to determine the previous step in workflow
       const currentEtape = document.etape;
       if (!currentEtape) {
         await t.rollback();
         return reply.status(400).send({
           success: false,
           message: "Document does not have a current etape assigned",
+        });
+      }
+
+      // Prevent rejection at the second level (sequence number 2)
+      if (currentEtape.sequenceNumber === 2) {
+        await t.rollback();
+        return reply.status(403).send({
+          success: false,
+          message: "Rejection is not allowed at this stage of the workflow",
+          details: "Documents at the second level (sequence number 2) cannot be rejected"
         });
       }
 
@@ -1246,13 +1254,12 @@ const documentController = {
             success: false,
             message: "Cannot determine where to send rejected document - no previous etape and no original sender found",
           });
-        }
-        
+        }        
         const originalSender = firstComment.user;
         
         // Add rejection comments with files
         const newComments = [];
-        if (comments?.length) {
+        if (comments && comments.length > 0) {
           for (const comment of comments) {
             if (comment.content?.trim()) {
               const newComment = await Commentaire.create(
@@ -1369,11 +1376,9 @@ const documentController = {
         });
       }
 
-      const targetUser = usersWithPreviousRole[0];
-
-      // Add rejection comments with files
+      const targetUser = usersWithPreviousRole[0];      // Add rejection comments with files
       const newComments = [];
-      if (comments?.length) {
+      if (comments && comments.length > 0) {
         for (const comment of comments) {
           if (comment.content?.trim()) {
             const newComment = await Commentaire.create(

@@ -1,6 +1,6 @@
 # 📚 Documentation API - Guide Développeur Frontend
 
-*Système de Gestion Documentaire Fastify v1.0*
+_Système de Gestion Documentaire Fastify v1.0_
 
 ## 🚀 Introduction
 
@@ -9,6 +9,7 @@ Cette documentation fournit toutes les informations nécessaires pour intégrer 
 ## 🔑 Authentification
 
 ### Headers requis
+
 ```javascript
 {
   "Authorization": "Bearer YOUR_JWT_TOKEN",
@@ -17,11 +18,12 @@ Cette documentation fournit toutes les informations nécessaires pour intégrer 
 ```
 
 ### Gestion des erreurs communes
+
 ```javascript
 // Codes d'erreur standardisés
 {
   401: "Non autorisé - Token manquant ou invalide",
-  403: "Accès interdit - Permissions insuffisantes", 
+  403: "Accès interdit - Permissions insuffisantes",
   404: "Ressource non trouvée",
   500: "Erreur serveur interne"
 }
@@ -32,7 +34,9 @@ Cette documentation fournit toutes les informations nécessaires pour intégrer 
 ## 👥 Routes d'Authentification
 
 ### 🔐 Connexion Utilisateur
+
 **POST** `/users/login`
+
 ```javascript
 // Request Body
 {
@@ -63,7 +67,9 @@ Cette documentation fournit toutes les informations nécessaires pour intégrer 
 ```
 
 ### 📝 Inscription Utilisateur
+
 **POST** `/users/register`
+
 ```javascript
 // Request Body (peut être un objet ou un tableau)
 {
@@ -94,7 +100,9 @@ Cette documentation fournit toutes les informations nécessaires pour intégrer 
 ```
 
 ### 🔄 Refresh Token
+
 **POST** `/refresh-token`
+
 ```javascript
 // Headers: Authorization: Bearer EXPIRED_TOKEN
 // Response 200
@@ -113,7 +121,9 @@ Cette documentation fournit toutes les informations nécessaires pour intégrer 
 ```
 
 ### 🚪 Déconnexion
+
 **POST** `/logout`
+
 ```javascript
 // Response 200
 {
@@ -123,7 +133,9 @@ Cette documentation fournit toutes les informations nécessaires pour intégrer 
 ```
 
 ### 🔒 Reset Mot de Passe
+
 **POST** `/users/request-reset`
+
 ```javascript
 // Request Body
 {
@@ -138,6 +150,7 @@ Cette documentation fournit toutes les informations nécessaires pour intégrer 
 ```
 
 **POST** `/users/reset-password`
+
 ```javascript
 // Request Body
 {
@@ -157,29 +170,33 @@ Cette documentation fournit toutes les informations nécessaires pour intégrer 
 ## 👤 Routes Utilisateurs (Admin uniquement)
 
 ### 📋 Lister tous les Utilisateurs
+
 **GET** `/users`
+
 ```javascript
 // Response 200
 [
   {
-    "idUser": "uuid",
-    "Email": "user@example.com",
-    "NomUser": "Dupont",
-    "PrenomUser": "Jean",
-    "Telephone": "+33123456789",
-    "LastLogin": "2024-01-15T10:30:00Z",
-    "IsActive": true,
-    "Roles": [
+    idUser: "uuid",
+    Email: "user@example.com",
+    NomUser: "Dupont",
+    PrenomUser: "Jean",
+    Telephone: "+33123456789",
+    LastLogin: "2024-01-15T10:30:00Z",
+    IsActive: true,
+    Roles: [
       {
-        "name": "user"
-      }
-    ]
-  }
-]
+        name: "user",
+      },
+    ],
+  },
+];
 ```
 
 ### 👤 Détails d'un Utilisateur
+
 **GET** `/users/:id`
+
 ```javascript
 // Response 200
 {
@@ -199,7 +216,9 @@ Cette documentation fournit toutes les informations nécessaires pour intégrer 
 ```
 
 ### ✏️ Modifier un Utilisateur
+
 **PUT** `/users/:id`
+
 ```javascript
 // Request Body
 {
@@ -218,7 +237,9 @@ Cette documentation fournit toutes les informations nécessaires pour intégrer 
 ```
 
 ### 🗑️ Supprimer un Utilisateur
+
 **DELETE** `/users/:id`
+
 ```javascript
 // Response 200
 {
@@ -228,7 +249,9 @@ Cette documentation fournit toutes les informations nécessaires pour intégrer 
 ```
 
 ### 👤 Profil Utilisateur Connecté
+
 **GET** `/users/me`
+
 ```javascript
 // Response 200
 {
@@ -247,12 +270,14 @@ Cette documentation fournit toutes les informations nécessaires pour intégrer 
 ## 📄 Routes Documents
 
 ### 📤 Transférer un Document
+
 **POST** `/forward-document`
+
 ```javascript
 // Content-Type: multipart/form-data
 {
   "documentId": "uuid",
-  "userId": "uuid", 
+  "userId": "uuid",
   "etapeId": "uuid",
   "comments": [
     {
@@ -275,7 +300,9 @@ Cette documentation fournit toutes les informations nécessaires pour intégrer 
 ```
 
 ### ✅ Approuver un Document
+
 **POST** `/approve-document`
+
 ```javascript
 // Content-Type: multipart/form-data
 {
@@ -303,7 +330,11 @@ Cette documentation fournit toutes les informations nécessaires pour intégrer 
 ```
 
 ### 📨 Documents Reçus
+
 **GET** `/received-documents/:userId`
+
+> Cette route retourne tous les documents reçus, incluant les documents en attente (pending) et les documents rejetés (rejected) avec leurs commentaires et fichiers associés.
+
 ```javascript
 // Response 200
 {
@@ -316,16 +347,45 @@ Cette documentation fournit toutes les informations nécessaires pour intégrer 
       "previousEtapeId": "uuid",
       "currentEtapeId": "uuid",
       "senderUserId": "uuid",
-      "status": "pending",
+      "status": "pending", // Can be "pending", "rejected", etc.
       "transferStatus": "received",
-      "transferTimestamp": "2024-01-15T10:30:00Z"
+      "transferTimestamp": "2024-01-15T10:30:00Z",
+      "comments": [
+        {
+          "id": "uuid",
+          "content": "Commentaire sur le document",
+          "createdAt": "2024-01-15T10:30:00Z",
+          "user": {
+            "id": "uuid",
+            "name": "Nom de l'utilisateur"
+          }
+        }
+      ],
+      "files": [
+        {
+          "id": "uuid",
+          "fileName": "document.pdf",
+          "filePath": "/uploads/document.pdf",
+          "fileType": "application/pdf",
+          "fileSize": 12345,
+          "thumbnailPath": "/uploads/thumbnails/document.jpg",
+          "createdAt": "2024-01-15T10:30:00Z"
+        }
+      ],
+      "etape": {
+        "id": "uuid",
+        "name": "Etape Name",
+        "sequenceNumber": 1
+      }
     }
   ]
 }
 ```
 
 ### 📑 Dernier Document
+
 **GET** `/latest-document`
+
 ```javascript
 // Response 200
 {
@@ -370,7 +430,9 @@ Cette documentation fournit toutes les informations nécessaires pour intégrer 
 ```
 
 ### 👁️ Voir un Document
+
 **GET** `/document/:documentTitle`
+
 ```javascript
 // Response 200
 {
@@ -385,7 +447,11 @@ Cette documentation fournit toutes les informations nécessaires pour intégrer 
 ```
 
 ### ❌ Rejeter un Document
+
 **POST** `/documents/:documentId/reject`
+
+> **Restriction importante**: La rejection n'est pas possible à l'étape 2 (sequence number 2) du workflow.
+
 ```javascript
 // Request Body
 {
@@ -398,8 +464,7 @@ Cette documentation fournit toutes les informations nécessaires pour intégrer 
 }
 
 // Response 200
-{
-  "success": true,
+{  "success": true,
   "message": "Document rejected and returned to sender",
   "data": {
     "document": { /* document mis à jour */ },
@@ -411,10 +476,20 @@ Cette documentation fournit toutes les informations nécessaires pour intégrer 
     "files": [/* fichiers du document */]
   }
 }
+
+// Response 403 - When rejection is not allowed
+{
+  "success": false,
+  "message": "Rejection is not allowed at this stage of the workflow",
+  "details": "Documents at the second level (sequence number 2) cannot be rejected"
+}
+}
 ```
 
 ### 🎯 Affecter une Étape
+
 **POST** `/assign-etape`
+
 ```javascript
 // Request Body
 {
@@ -430,7 +505,9 @@ Cette documentation fournit toutes les informations nécessaires pour intégrer 
 ```
 
 ### ⏭️ Transférer à l'Étape Suivante
+
 **POST** `/forward-to-next-etape`
+
 ```javascript
 // Content-Type: multipart/form-data
 {
@@ -464,7 +541,9 @@ Cette documentation fournit toutes les informations nécessaires pour intégrer 
 ## 🎯 Routes Étapes
 
 ### 📋 Toutes les Étapes
+
 **GET** `/etapes/all`
+
 ```javascript
 // Response 200
 {
@@ -494,7 +573,9 @@ Cette documentation fournit toutes les informations nécessaires pour intégrer 
 ```
 
 ### ➕ Créer une Étape
+
 **POST** `/etapes`
+
 ```javascript
 // Request Body (peut être un objet ou un tableau)
 {
@@ -526,7 +607,9 @@ Cette documentation fournit toutes les informations nécessaires pour intégrer 
 ```
 
 ### 🎯 Étape par ID
+
 **GET** `/etapes/:etapeId`
+
 ```javascript
 // Response 200
 {
@@ -549,7 +632,9 @@ Cette documentation fournit toutes les informations nécessaires pour intégrer 
 ```
 
 ### 👥 Utilisateurs de l'Étape Suivante
+
 **GET** `/etapes/:etapeId/next-users`
+
 ```javascript
 // Response 200
 {
@@ -566,7 +651,9 @@ Cette documentation fournit toutes les informations nécessaires pour intégrer 
 ```
 
 ### 🎭 Étapes par Rôle
+
 **GET** `/etapes/role/:roleName`
+
 ```javascript
 // Response 200
 {
@@ -599,7 +686,9 @@ Cette documentation fournit toutes les informations nécessaires pour intégrer 
 ```
 
 ### 🗑️ Supprimer une Étape
+
 **DELETE** `/etapes/delete/:etapeId`
+
 ```javascript
 // Response 200
 {
@@ -609,7 +698,9 @@ Cette documentation fournit toutes les informations nécessaires pour intégrer 
 ```
 
 ### 🔗 Affecter Étape à Document
+
 **POST** `/etapes/affect`
+
 ```javascript
 // Content-Type: multipart/form-data
 {
@@ -634,6 +725,7 @@ Cette documentation fournit toutes les informations nécessaires pour intégrer 
 > **💡 Route Recommandée** : Pour la prévisualisation de documents, utilisez prioritairement `/highlightera2/:documentName/:searchTerm` qui offre l'extraction de chemin physique et une structure de réponse optimisée.
 
 ### 🔎 Recherche sans Nom de Document
+
 **GET** `/search-without-name/:searchTerm`
 
 Effectue une recherche globale sur tous les documents indexés sans spécifier de nom de document particulier.
@@ -664,12 +756,13 @@ Effectue une recherche globale sur tous les documents indexés sans spécifier d
 // Error 503 - Service Unavailable
 {
   "success": false,
-  "error": "Service Unavailable", 
+  "error": "Service Unavailable",
   "message": "Elasticsearch service is not available"
 }
 ```
 
 ### 📖 Recherche avec Nom de Document
+
 **GET** `/search/:documentName/:searchTerm`
 
 Effectue une recherche dans un document spécifique avec surlignage des résultats.
@@ -715,6 +808,7 @@ Effectue une recherche dans un document spécifique avec surlignage des résulta
 ```
 
 ### 💡 Recherche de Propositions
+
 **GET** `/search-propositions/:searchTerm`
 
 Recherche et propose des documents pertinents basés sur un terme de recherche avec scoring de pertinence.
@@ -767,6 +861,7 @@ Recherche et propose des documents pertinents basés sur un terme de recherche a
 ```
 
 ### 🎨 Recherche avec Surlignage Avancé
+
 **GET** `/search1Highligth/:searchTerm`
 
 Version améliorée de la recherche de propositions avec gestion d'erreurs renforcée et réponse de fallback.
@@ -802,6 +897,7 @@ Version améliorée de la recherche de propositions avec gestion d'erreurs renfo
 ```
 
 ### 🎯 Prévisualisation de Document avec Surlignage
+
 **GET** `/highlightera2/:documentName/:searchTerm`
 
 **🔥 Route principale pour la génération de PDF structuré**
@@ -841,7 +937,7 @@ Cette route génère un PDF physique structuré en 3 parties d'un document avec 
     "Page de titre",
     "Page 1 du document original (si sans correspondances)",
     "Page 5 du document original (avec correspondances)",
-    "Page 12 du document original (avec correspondances)", 
+    "Page 12 du document original (avec correspondances)",
     "Page 25 du document original (dernière page)",
     "Page de résumé"
   ]
@@ -850,7 +946,7 @@ Cette route génère un PDF physique structuré en 3 parties d'un document avec 
 // Error 404 - Document Not Found
 {
   "success": false,
-  "error": "Not Found", 
+  "error": "Not Found",
   "message": "Document not found",
   "documentName": "document_inexistant",
   "searchTerm": "terme"
@@ -865,7 +961,7 @@ Cette route génère un PDF physique structuré en 3 parties d'un document avec 
       "physicalPath": "/home/tims/Documents/decret LLM/PM/Décret N 2011_1116_PM du 26 avril 2011, fixant les modifications de la coopération décentralisée.pdf",
       "previewType": "Physical Document" // ou "Elasticsearch Content" si fallback
     },
-    
+
     // 🔍 Informations de recherche
     "searchInfo": {
       "searchTerm": "coopération décentralisée",
@@ -874,7 +970,7 @@ Cette route génère un PDF physique structuré en 3 parties d'un document avec 
       "pagesWithMatches": 3,              // Nombre de pages contenant le terme
       "timestamp": "2024-12-19T14:30:00Z"
     },
-    
+
     // 📄 Structure de prévisualisation en 3 parties
     "previewPages": [
       // 1️⃣ PREMIÈRE PAGE (si pas de correspondances)
@@ -885,7 +981,7 @@ Cette route génère un PDF physique structuré en 3 parties d'un document avec 
         "matchCount": 0,
         "pageType": "first"
       },
-      
+
       // 2️⃣ PAGES AVEC CORRESPONDANCES
       {
         "pageNumber": 5,
@@ -910,7 +1006,7 @@ Cette route génère un PDF physique structuré en 3 parties d'un document avec 
         "pageType": "match",
         "matchHighlights": [...]
       },
-      
+
       // 3️⃣ DERNIÈRE PAGE (si différente des précédentes)
       {
         "pageNumber": 25,
@@ -920,7 +1016,7 @@ Cette route génère un PDF physique structuré en 3 parties d'un document avec 
         "pageType": "last"
       }
     ],
-    
+
     "summary": "Document physique analysé: 25 pages, 8 occurrence(s) trouvée(s) sur 3 page(s)."
   }
 }
@@ -928,7 +1024,7 @@ Cette route génère un PDF physique structuré en 3 parties d'un document avec 
 // Error 404 - Document Not Found
 {
   "success": false,
-  "error": "Not Found", 
+  "error": "Not Found",
   "message": "Document not found",
   "documentName": "document_inexistant",
   "searchTerm": "terme"
@@ -944,14 +1040,16 @@ Cette route génère un PDF physique structuré en 3 parties d'un document avec 
 ```
 
 **💡 Améliorations Apportées :**
+
 - ✅ **PDF Physique** : Génération d'un fichier PDF réel au lieu de JSON
-- ✅ **Structure 3-parties** : Première page + pages avec correspondances + dernière page  
+- ✅ **Structure 3-parties** : Première page + pages avec correspondances + dernière page
 - ✅ **Copie de Pages** : Pages originales copiées depuis le document source
 - ✅ **Page de Titre** : Informations de recherche et métadonnées
 - ✅ **Page de Résumé** : Statistiques et structure du document
 - ✅ **Visualisation Directe** : PDF affiché dans le navigateur pour consultation
 
 **🔧 Fonctionnalités Techniques :**
+
 - **Extraction de chemin physique** via Elasticsearch (`path.real`)
 - **Copie intelligente de pages** depuis le document original avec pdf-lib
 - **Fallback robuste** sur contenu texte si l'original n'est pas accessible
@@ -961,6 +1059,7 @@ Cette route génère un PDF physique structuré en 3 parties d'un document avec 
 ### 🔧 Fonctionnalités Techniques
 
 #### 🎯 Extraction de Chemin Physique
+
 Le système utilise une approche intelligente pour localiser les documents :
 
 1. **Recherche Elasticsearch** : Extraction de `path.real` depuis l'index Elasticsearch
@@ -968,21 +1067,26 @@ Le système utilise une approche intelligente pour localiser les documents :
 3. **Validation physique** : Vérification de l'existence du fichier avant traitement
 
 #### 📊 Structure de Prévisualisation en 3 Parties
+
 - **Première page** : Affichage systématique (sauf si elle contient des correspondances)
 - **Pages avec correspondances** : Toutes les pages contenant le terme recherché
 - **Dernière page** : Affichage si différente des pages précédentes
 
 #### 🔍 Recherche Flexible
+
 - **Normalisation des termes** : Suppression des accents et caractères spéciaux
 - **Variantes de recherche** : Recherche avec/sans 's' final
 - **Surlignage contextuel** : Extraction d'extraits autour des correspondances
 
 #### ⚡ Mode Dégradé
+
 Si Elasticsearch est indisponible :
+
 - **Réponse de fallback** : Génération de contenu simulé
 - **Continuité de service** : L'API reste fonctionnelle
 - **Indicateurs visuels** : `previewType: "Elasticsearch Content"`
-```
+
+````
 
 ---
 
@@ -1001,10 +1105,12 @@ Si Elasticsearch est indisponible :
     "updatedAt": "2024-01-15T09:00:00Z"
   }
 ]
-```
+````
 
 ### ➕ Créer une Structure
+
 **POST** `/structures`
+
 ```javascript
 // Request Body
 {
@@ -1027,23 +1133,27 @@ Si Elasticsearch est indisponible :
 ## 🎭 Routes Rôles (Admin uniquement)
 
 ### 📋 Tous les Rôles
+
 **GET** `/rolesss`
+
 ```javascript
 // Response 200
 [
   {
-    "idRole": "uuid",
-    "name": "admin",
-    "description": "Administrateur système",
-    "isSystemRole": true,
-    "createdAt": "2024-01-15T09:00:00Z",
-    "updatedAt": "2024-01-15T09:00:00Z"
-  }
-]
+    idRole: "uuid",
+    name: "admin",
+    description: "Administrateur système",
+    isSystemRole: true,
+    createdAt: "2024-01-15T09:00:00Z",
+    updatedAt: "2024-01-15T09:00:00Z",
+  },
+];
 ```
 
 ### ➕ Créer un Rôle
+
 **POST** `/roles`
+
 ```javascript
 // Request Body (peut être un objet ou un tableau)
 {
@@ -1074,7 +1184,9 @@ Si Elasticsearch est indisponible :
 ```
 
 ### ✏️ Modifier un Rôle
+
 **PUT** `/roles/:roleId`
+
 ```javascript
 // Request Body
 {
@@ -1090,7 +1202,9 @@ Si Elasticsearch est indisponible :
 ```
 
 ### 🗑️ Supprimer un Rôle
+
 **DELETE** `/roles/:roleId`
+
 ```javascript
 // Response 204 (No Content)
 ```
@@ -1100,22 +1214,26 @@ Si Elasticsearch est indisponible :
 ## 📊 Routes Projets
 
 ### 📋 Tous les Types de Projets
+
 **GET** `/projets/all`
+
 ```javascript
 // Response 200
 [
   {
-    "idType": "uuid",
-    "Libelle": "Projet Standard",
-    "Description": "Type de projet standard",
-    "createdAt": "2024-01-15T09:00:00Z",
-    "updatedAt": "2024-01-15T09:00:00Z"
-  }
-]
+    idType: "uuid",
+    Libelle: "Projet Standard",
+    Description: "Type de projet standard",
+    createdAt: "2024-01-15T09:00:00Z",
+    updatedAt: "2024-01-15T09:00:00Z",
+  },
+];
 ```
 
 ### ➕ Créer un Type de Projet
+
 **POST** `/projets`
+
 ```javascript
 // Request Body
 {
@@ -1138,7 +1256,9 @@ Si Elasticsearch est indisponible :
 ## 🔗 Routes Étapes-Types Projets
 
 ### 📋 Types Projets avec Étapes
+
 **GET** `/typeprojets-with-etapes`
+
 ```javascript
 // Response 200
 {
@@ -1163,7 +1283,9 @@ Si Elasticsearch est indisponible :
 ```
 
 ### 🔗 Assigner Étape à Type Projet
+
 **POST** `/assign-etape-type-projet`
+
 ```javascript
 // Request Body
 {
@@ -1184,7 +1306,9 @@ Si Elasticsearch est indisponible :
 ```
 
 ### 🎯 Étapes par Type Projet
+
 **GET** `/typeprojet/:typeProjetId/etapes`
+
 ```javascript
 // Response 200
 {
@@ -1214,7 +1338,9 @@ Si Elasticsearch est indisponible :
 ## 🔔 Routes Notifications
 
 ### 📋 Toutes les Notifications
+
 **GET** `/notifications`
+
 ```javascript
 // Response 200
 {
@@ -1233,7 +1359,9 @@ Si Elasticsearch est indisponible :
 ```
 
 ### 📬 Notifications Non Lues
+
 **GET** `/notifications/unread`
+
 ```javascript
 // Response 200
 {
@@ -1252,7 +1380,9 @@ Si Elasticsearch est indisponible :
 ```
 
 ### ✅ Marquer comme Lu
+
 **PUT** `/notifications/:notificationId/read`
+
 ```javascript
 // Response 200
 {
@@ -1262,7 +1392,9 @@ Si Elasticsearch est indisponible :
 ```
 
 ### ✅ Marquer Tout comme Lu
+
 **PUT** `/notifications/read-all`
+
 ```javascript
 // Response 200
 {
@@ -1273,7 +1405,9 @@ Si Elasticsearch est indisponible :
 ```
 
 ### 🗑️ Supprimer une Notification
+
 **DELETE** `/notifications/:notificationId`
+
 ```javascript
 // Response 200
 {
@@ -1287,7 +1421,9 @@ Si Elasticsearch est indisponible :
 ## 💬 Routes Commentaires
 
 ### ➕ Créer un Commentaire
+
 **POST** `/commentaires`
+
 ```javascript
 // Request Body
 {
@@ -1310,7 +1446,9 @@ Si Elasticsearch est indisponible :
 ```
 
 ### ✏️ Modifier un Commentaire
+
 **PUT** `/commentaires/:idCommentaire`
+
 ```javascript
 // Request Body
 {
@@ -1324,7 +1462,9 @@ Si Elasticsearch est indisponible :
 ```
 
 ### 🗑️ Supprimer un Commentaire (Admin uniquement)
+
 **DELETE** `/commentaires/:idCommentaire`
+
 ```javascript
 // Response 200
 {
@@ -1337,7 +1477,9 @@ Si Elasticsearch est indisponible :
 ## ⚕️ Routes Système
 
 ### 🏥 Health Check
+
 **GET** `/health`
+
 ```javascript
 // Response 200
 {
@@ -1374,7 +1516,9 @@ Si Elasticsearch est indisponible :
 ```
 
 ### 🔧 Initialisation Admin (SuperAdmin uniquement)
+
 **POST** `/init/admin`
+
 ```javascript
 // Request Body
 {
@@ -1404,6 +1548,7 @@ Si Elasticsearch est indisponible :
 ## 🛡️ Sécurité et Permissions
 
 ### Hiérarchie des Rôles
+
 ```javascript
 {
   "superadmin": "Accès total au système",
@@ -1413,11 +1558,13 @@ Si Elasticsearch est indisponible :
 ```
 
 ### Middleware d'Authentification
+
 - **verifyToken**: Vérifie la validité du JWT
 - **requireRole(['admin', 'user'])**: Contrôle d'accès basé sur les rôles
 - **requireSuperAdmin**: Accès SuperAdmin uniquement
 
 ### Gestion des Erreurs
+
 ```javascript
 // Format standard des erreurs
 {
@@ -1432,12 +1579,14 @@ Si Elasticsearch est indisponible :
 ## 📝 Notes d'Implémentation
 
 ### Upload de Fichiers
+
 - Format: `multipart/form-data`
 - Validation MIME type automatique
 - Génération de thumbnails pour les images
 - Stockage sécurisé dans `/uploads/`
 
 ### Pagination
+
 - Certaines routes supportent la pagination
 - Paramètres: `?page=1&limit=10`
 - Réponse avec metadata: `total`, `count`, `page`
@@ -1445,14 +1594,17 @@ Si Elasticsearch est indisponible :
 ### Recherche Elasticsearch Avancée
 
 #### 🎯 Extraction Intelligente de Chemins Physiques
+
 Le système utilise une approche sophistiquée pour localiser les documents :
 
 1. **Extraction Elasticsearch First** : Le système interroge d'abord Elasticsearch pour extraire `path.real` depuis l'index
+
    ```javascript
    // Extraction du chemin physique
-   const physicalPath = elasticsearchDoc.path?.real || 
-                        elasticsearchDoc.file?.path?.real || 
-                        elasticsearchDoc.file?.path;
+   const physicalPath =
+     elasticsearchDoc.path?.real ||
+     elasticsearchDoc.file?.path?.real ||
+     elasticsearchDoc.file?.path;
    ```
 
 2. **Validation Physique** : Vérification de l'existence du fichier avant traitement
@@ -1460,6 +1612,7 @@ Le système utilise une approche sophistiquée pour localiser les documents :
 4. **Mode Dégradé** : Réponse de fallback avec contenu simulé pour maintenir la continuité de service
 
 #### 📊 Prévisualisation Structurée en 3 Parties
+
 L'algorithme de prévisualisation suit une logique métier précise :
 
 - **1️⃣ Première page** : Affichage systématique (sauf si elle contient des correspondances)
@@ -1467,12 +1620,14 @@ L'algorithme de prévisualisation suit une logique métier précise :
 - **3️⃣ Dernière page** : Affichage si différente des pages précédentes et > 1 page
 
 #### 🔍 Recherche Flexible et Intelligente
+
 - **Normalisation des termes** : Suppression des accents et caractères spéciaux
 - **Variantes automatiques** : Recherche avec/sans 's' final, gestion pluriels
 - **Highlighting contextuel** : Extraction d'extraits de 50 caractères autour des correspondances
 - **Score de pertinence** : Utilisation du scoring Elasticsearch natif
 
 #### ⚡ Gestion de la Robustesse
+
 - **Timeout configurables** : 30 secondes par défaut avec retry automatique
 - **Gestion d'erreurs granulaire** : Différenciation entre erreurs réseau, document non trouvé, PDF corrompu
 - **Fallback graduel** : Recherche avec highlight → sans highlight → mock response
@@ -1480,12 +1635,14 @@ L'algorithme de prévisualisation suit une logique métier précise :
 - **Support multi-format** : PDF natif avec extension possible vers d'autres formats
 
 #### 📈 Performance et Optimisation
+
 - **Mise en cache** : Réutilisation des connexions Elasticsearch avec pool de connexions
 - **Pagination intelligente** : Limitation à 150 caractères par fragment avec 3 fragments max
 - **Compression de contenu** : Limitation à 1000 caractères par page de prévisualisation
 - **Lazy loading** : Chargement différé des métadonnées de documents non critiques
 
 ### WebSocket (si implémenté)
+
 - Notifications en temps réel
 - Mise à jour du statut des documents
 - Notifications de workflow
@@ -1497,21 +1654,25 @@ L'algorithme de prévisualisation suit une logique métier précise :
 ### 🔍 Système de Recherche Optimisé
 
 #### ✨ Nouveautés Majeures
+
 - **Extraction `path.real`** : Utilisation des chemins physiques depuis Elasticsearch pour localiser précisément les documents
 - **Prévisualisation 3-parties** : Structure intelligente (première page + pages avec correspondances + dernière page)
 - **Recherche flexible** : Gestion automatique des variantes de termes et normalisation
 - **Mode dégradé robuste** : Continuité de service même si Elasticsearch est indisponible
 
 #### 🎯 Route Principale : `/highlightera2/:documentName/:searchTerm`
+
 Cette route offre maintenant :
+
 - **🆕 Génération PDF physique** : Retourne un vrai fichier PDF au lieu de JSON
 - **📄 Structure 3-parties** : Première page + pages avec correspondances + dernière page
 - **📋 Page de titre** : Métadonnées complètes de la recherche
-- **📊 Page de résumé** : Statistiques et informations techniques  
+- **📊 Page de résumé** : Statistiques et informations techniques
 - **🔗 Copie de pages originales** : Pages du document source intégrées au PDF
 - **💻 Visualisation directe** : Fichier PDF affiché dans le navigateur
 
 #### 📊 Exemple de Chemin Physique Extrait
+
 ```javascript
 // Avant (chemin deviné)
 "physicalPath": "/uploads/document.pdf"
@@ -1521,6 +1682,7 @@ Cette route offre maintenant :
 ```
 
 #### 🔧 Améliorations Techniques
+
 - **Performance** : Réduction du temps de recherche de 40%
 - **Précision** : Localisation exacte des documents (100% de réussite avec Elasticsearch)
 - **Robustesse** : Fallback intelligent sur 3 niveaux
@@ -1530,8 +1692,9 @@ Cette route offre maintenant :
 - **🆕 Métadonnées enrichies** : Pages de titre et résumé automatiques
 
 ### 🚀 Impact pour les Développeurs Frontend
+
 - **🆕 Visualisation PDF** : Fichiers PDF physiques directement visualisables dans le navigateur
-- **📄 Structure normalisée** : Toujours 3 parties (titre + contenu + résumé) 
+- **📄 Structure normalisée** : Toujours 3 parties (titre + contenu + résumé)
 - **API plus fiable** : Moins d'erreurs 404 grâce à la localisation précise
 - **Données enrichies** : Métadonnées complètes sur chaque document
 - **Gestion d'erreurs** : Messages d'erreur plus précis et exploitables
