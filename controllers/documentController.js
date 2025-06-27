@@ -12,6 +12,7 @@ const {
 const { v4: uuidv4 } = require("uuid");
 const { createNotification } = require("../utils/notificationUtils"); // Import de createNotification
 const fileHandler = require('../services/fileHandler');
+const searchService = require('../services/searchService');
 
 const verifyDocumentStatus = async (document) => {
   try {
@@ -34,12 +35,12 @@ const documentController = {
   forwardDocument: async (request, reply) => {
     const {
       documentId,
-      userId, 
-      comments, 
+      userId,
+      comments,
       etapeId,
       UserDestinatorName: providedDestinator,
     } = request.body;
-    
+
     const files = request.files || {};
 
     if (!documentId || !etapeId) {
@@ -51,7 +52,7 @@ const documentController = {
 
     const transferTimestamp = new Date();
     const t = await sequelize.transaction();
-  
+
 
     try {
       const etape = await Etape.findByPk(etapeId);
@@ -118,7 +119,7 @@ const documentController = {
         });
       }
 
-      let document = await Document.findByPk(documentId);
+      const document = await Document.findByPk(documentId);
       if (!document) {
         return reply.status(404).send({
           error: "Not Found",
@@ -169,12 +170,12 @@ const documentController = {
             size: file.size,
             mimetype: file.mimetype
           });
-          
+
           let savedFile;
           if (file.base64 && file.mimetype) {
             console.log('Handling base64 file upload');
             savedFile = await fileHandler.decodeAndSaveFile(
-              file.base64, 
+              file.base64,
               document.idDocument,
               file.mimetype
             );
@@ -206,7 +207,7 @@ const documentController = {
       document.transferTimestamp = transferTimestamp;
       document.UserDestinatorName = destinatorUser.NomUser;
       await document.save({ transaction: t });
-  
+
       const updatedDocument = await Document.findByPk(documentId, {
         include: [
           {
@@ -216,8 +217,8 @@ const documentController = {
             where:
               newComments.length > 0
                 ? {
-                    idComment: newComments.map((c) => c.idComment),
-                  }
+                  idComment: newComments.map((c) => c.idComment),
+                }
                 : undefined,
             attributes: ["idComment", "Contenu", "createdAt"],
             include: [
@@ -244,7 +245,7 @@ const documentController = {
       });
 
       await t.commit();
-  
+
       return reply.status(200).send({
         success: true,
         destinatorUser: {
@@ -278,8 +279,8 @@ const documentController = {
   forwardToNextEtape: async (request, reply) => {
     const {
       documentId,
-      userId, 
-      comments, 
+      userId,
+      comments,
       etapeId,
       UserDestinatorName,
       nextEtapeName,
@@ -817,10 +818,10 @@ const documentController = {
             name: etape.LibelleEtape,
             requiredRole: requiredRole
               ? {
-                  id: requiredRole.idRole,
-                  name: requiredRole.name,
-                  description: requiredRole.description,
-                }
+                id: requiredRole.idRole,
+                name: requiredRole.name,
+                description: requiredRole.description,
+              }
               : null,
           },
         },
@@ -956,16 +957,16 @@ const documentController = {
             url: doc.url,
             destinator: doc.UserDestinatorName,
             comments:              doc.commentaires?.map((c) => ({
-                id: c.idComment,
-                content: c.Contenu,
-                createdAt: c.createdAt,
-                user: c.user
-                  ? {
-                    id: c.user.idUser,
-                    name: c.user.NomUser,
-                  }
-                  : null,
-              })) || [],
+              id: c.idComment,
+              content: c.Contenu,
+              createdAt: c.createdAt,
+              user: c.user
+                ? {
+                  id: c.user.idUser,
+                  name: c.user.NomUser,
+                }
+                : null,
+            })) || [],
             files: doc.files || [],
             etape: doc.etape ? {
               id: doc.etape.idEtape,
@@ -1085,7 +1086,7 @@ const documentController = {
   getLatestDocument: async (request, reply) => {
     try {
       console.log("Fetching latest document...");
-      
+
       const latestDocument = await Document.findOne({
         include: [
           {
@@ -1254,9 +1255,9 @@ const documentController = {
             success: false,
             message: "Cannot determine where to send rejected document - no previous etape and no original sender found",
           });
-        }        
+        }
         const originalSender = firstComment.user;
-        
+
         // Add rejection comments with files
         const newComments = [];
         if (comments && comments.length > 0) {
@@ -1285,7 +1286,7 @@ const documentController = {
             let savedFile;
             if (file.base64 && file.mimetype) {
               savedFile = await fileHandler.decodeAndSaveFile(
-                file.base64, 
+                file.base64,
                 document.idDocument,
                 file.mimetype
               );
@@ -1404,7 +1405,7 @@ const documentController = {
           let savedFile;
           if (file.base64 && file.mimetype) {
             savedFile = await fileHandler.decodeAndSaveFile(
-              file.base64, 
+              file.base64,
               document.idDocument,
               file.mimetype
             );
@@ -1556,7 +1557,7 @@ const documentController = {
       // Process the documents to include additional information
       const processedDocuments = rejectedDocuments.map(doc => {
         // Find the rejection comment (usually the last one)
-        const rejectionComment = doc.commentaires.find(comment => 
+        const rejectionComment = doc.commentaires.find(comment =>
           comment.Contenu && (
             comment.Contenu.toLowerCase().includes('rejet') ||
             comment.Contenu.toLowerCase().includes('reject')
@@ -1629,6 +1630,28 @@ const documentController = {
         success: false,
         error: "Internal Server Error",
         message: error.message,
+      });
+    }
+  },
+
+  searchAndPreviewDocument: async (request, reply) => {
+    try {
+      const { documentName, searchTerm } = request.params;
+      if (!documentName || !searchTerm) {
+        return reply.status(400).send({
+          error: 'Bad Request',
+          message: 'Both documentName and searchTerm are required.'
+        });
+      }
+      const preview = await searchService.generateDocumentPreview(documentName, searchTerm);
+      const pdfBuffer = await searchService.generateStructuredPDF(preview, documentName, searchTerm);
+      reply.header('Content-Type', 'application/pdf');
+      reply.header('Content-Disposition', `inline; filename="${documentName}-search.pdf"`);
+      return reply.send(pdfBuffer);
+    } catch (error) {
+      return reply.status(404).send({
+        error: 'Not Found',
+        message: error.message || 'Document preview not available.'
       });
     }
   },

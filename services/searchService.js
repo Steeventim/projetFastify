@@ -5,11 +5,11 @@ const fs = require('fs');
 const path = require('path');
 require('dotenv').config();
 
-const LOCAL_PDF_DIRECTORY = process.env.PDF_DIRECTORY || "/home/tims/Dev/FastifyProjet/myproject/uploads";
+const LOCAL_PDF_DIRECTORY = process.env.PDF_DIRECTORY || "C:\\Users\\laure\\Desktop\\Document";
 
 // Initialize Elasticsearch client with retry and timeout settings
 const esClient = new Client({
-  node: process.env.ELASTICSEARCH_NODE || 'http://localhost:9200',
+  node: process.env.ELASTICSEARCH_NODE || 'http://192.168.50.100:9200',
   maxRetries: 3,
   requestTimeout: 30000,
   sniffOnStart: true,
@@ -877,75 +877,6 @@ const searchService = {
           }
         }
       }
-
-      // 3. Ajouter une page de résumé finale
-      const summaryPage = newPdfDoc.addPage([612, 792]);
-      
-      summaryPage.drawText('RÉSUMÉ DE LA RECHERCHE', {
-        x: 50,
-        y: 720,
-        size: 18,
-        font: boldFont,
-        color: rgb(0, 0, 0.8)
-      });
-      
-      summaryPage.drawText(`Document analysé: ${previewData.documentInfo?.filename || documentName}`, {
-        x: 50,
-        y: 680,
-        size: 12,
-        font: font,
-        color: rgb(0, 0, 0)
-      });
-      
-      summaryPage.drawText(`Pages totales du document: ${previewData.documentInfo?.totalPages || 'N/A'}`, {
-        x: 50,
-        y: 660,
-        size: 12,
-        font: font,
-        color: rgb(0, 0, 0)
-      });
-      
-      summaryPage.drawText(`Type de prévisualisation: ${previewData.documentInfo?.previewType || 'Standard'}`, {
-        x: 50,
-        y: 640,
-        size: 12,
-        font: font,
-        color: rgb(0, 0, 0)
-      });
-      
-      summaryPage.drawText('Structure du PDF généré:', {
-        x: 50,
-        y: 610,
-        size: 12,
-        font: boldFont,
-        color: rgb(0, 0, 0)
-      });
-      
-      summaryPage.drawText('• Page de titre avec informations de recherche', {
-        x: 70,
-        y: 590,
-        size: 10,
-        font: font,
-        color: rgb(0, 0, 0)
-      });
-      
-      summaryPage.drawText('• Pages du document avec correspondances trouvées', {
-        x: 70,
-        y: 575,
-        size: 10,
-        font: font,
-        color: rgb(0, 0, 0)
-      });
-      
-      summaryPage.drawText('• Page de résumé et statistiques', {
-        x: 70,
-        y: 560,
-        size: 10,
-        font: font,
-        color: rgb(0, 0, 0)
-      });
-      
-      console.log('Summary page added');
 
       // Générer et retourner le PDF
       const pdfBytes = await newPdfDoc.save();

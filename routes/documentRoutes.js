@@ -326,4 +326,18 @@ module.exports = async function (fastify, opts) {
     },
     preHandler: [authMiddleware.verifyToken]
   }, documentController.rejectDocument);
+
+  // Search and preview document (PDF/text preview for a search term)
+  fastify.get('/documents/:documentName/search/:searchTerm', {
+    schema: {
+      params: {
+        type: 'object',
+        required: ['documentName', 'searchTerm'],
+        properties: {
+          documentName: { type: 'string' },
+          searchTerm: { type: 'string' }
+        }
+      }
+    }
+  }, documentController.searchAndPreviewDocument);
 };
