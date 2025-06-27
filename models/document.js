@@ -6,7 +6,7 @@ module.exports = (sequelize, DataTypes) => {
       primaryKey: true
     },
     Title: {
-      type: DataTypes.STRING,
+      type: DataTypes.TEXT,
       allowNull: true
     },
     etapeId: {

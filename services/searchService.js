@@ -4,6 +4,7 @@ const pdfParse = require('pdf-parse');
 const fs = require('fs');
 const path = require('path');
 require('dotenv').config();
+const fontkit = require('@pdf-lib/fontkit');
 
 const LOCAL_PDF_DIRECTORY = process.env.PDF_DIRECTORY || "C:\\Users\\laure\\Desktop\\Document";
 
@@ -28,7 +29,21 @@ const ping = async () => {
   }
 };
 
-const searchService = {  
+const DEJAVU_SANS_PATH = path.join(__dirname, '../assets/fonts/dejavu-fonts-ttf-2.37/ttf/DejaVuSans.ttf');
+const DEJAVU_SANS_BOLD_PATH = path.join(__dirname, '../assets/fonts/dejavu-fonts-ttf-2.37/ttf/DejaVuSans-Bold.ttf');
+
+// Utility for robust filename normalization
+function normalizeFilename(str) {
+  return str
+    .toLowerCase()
+    .replace(/\s+/g, '_')
+    .replace(/[.,]/g, '_')
+    .replace(/[^a-z0-9_]/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_+|_+$/g, '');
+}
+
+const searchService = {
   async searchWithHighlight(searchTerm) {
     try {
       // First check if elasticsearch is available
@@ -183,7 +198,7 @@ const searchService = {
         // Check for similar document names
         if (allDocsResponse.hits.hits.length > 0) {
           // Get all document names
-          const allDocNames = allDocsResponse.hits.hits.map(hit => 
+          const allDocNames = allDocsResponse.hits.hits.map(hit =>
             hit._source.file?.filename || ''
           ).filter(name => name); // Filter out empty names
           
@@ -938,8 +953,7 @@ const searchService = {
 
   // Nouvelle fonction pour générer un PDF physique structuré en 3 parties
   async generateStructuredPDF(previewData, documentName, searchTerm) {
-    const { rgb, StandardFonts } = require('pdf-lib');
-
+    const { rgb } = require('pdf-lib');
     try {
       console.log('=== generateStructuredPDF START ===');
       console.log('previewData received:', {
@@ -947,21 +961,18 @@ const searchService = {
         searchInfo: previewData.searchInfo,
         previewPagesCount: previewData.previewPages?.length || 0
       });
-      
       // Créer un nouveau document PDF
       const newPdfDoc = await PDFDocument.create();
+      newPdfDoc.registerFontkit(fontkit); // Register fontkit for Unicode fonts
       console.log('PDF document created successfully');
-      
       // Charger le document original si possible pour copier les pages
       let originalPdfDoc = null;
       let originalPages = [];
-      
       const physicalPath = previewData.documentInfo?.physicalPath;
       if (physicalPath && 
           physicalPath !== 'Document non trouvé localement' &&
           physicalPath !== 'N/A' &&
           fs.existsSync(physicalPath)) {
-        
         try {
           console.log('Loading original PDF from:', physicalPath);
           const originalPdfBytes = fs.readFileSync(physicalPath);
@@ -974,13 +985,21 @@ const searchService = {
       } else {
         console.log('No valid physical path for original document');
       }
-
-      // Charger les polices pour le contenu des pages (si nécessaire)
-      const font = await newPdfDoc.embedFont(StandardFonts.Helvetica);
-      const boldFont = await newPdfDoc.embedFont(StandardFonts.HelveticaBold);
-      
+      // --- Embed Unicode fonts ---
+      let font, boldFont;
+      try {
+        const fontBytes = fs.readFileSync(DEJAVU_SANS_PATH);
+        font = await newPdfDoc.embedFont(fontBytes);
+        const boldFontBytes = fs.readFileSync(DEJAVU_SANS_BOLD_PATH);
+        boldFont = await newPdfDoc.embedFont(boldFontBytes);
+        console.log('DejaVuSans fonts loaded');
+      } catch (fontErr) {
+        console.error('Error loading DejaVuSans fonts, falling back to StandardFonts:', fontErr.message);
+        const { StandardFonts } = require('pdf-lib');
+        font = await newPdfDoc.embedFont(StandardFonts.Helvetica);
+        boldFont = await newPdfDoc.embedFont(StandardFonts.HelveticaBold);
+      }
       console.log('Fonts loaded, skipping title page generation');
-
       // Traiter uniquement les pages de prévisualisation avec correspondances
       if (previewData.previewPages && previewData.previewPages.length > 0) {
         for (const page of previewData.previewPages) {

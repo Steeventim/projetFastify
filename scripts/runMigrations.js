@@ -67,6 +67,8 @@ const migrations = [
 
   // Latest fixes (June 2025)
   '20250618122000-change-etape-description-to-text.js',
+  '20250627_alter_documents_title_to_text.js',
+  '20250627_alter_documents_url_to_text.js',
 ];
 
 async function dropAllTables() {
