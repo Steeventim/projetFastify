@@ -39,7 +39,7 @@ const searchService = {
       // Try with highlighting first
       try {
         const response = await esClient.search({
-          index: process.env.INDEX || 'test2',
+          index: process.env.INDEX || 'test3',
           body: {
             query: {
               match: {
@@ -71,7 +71,7 @@ const searchService = {
         console.log('Highlighting failed, searching without highlights:', highlightError.message);
         
         const response = await esClient.search({
-          index: process.env.INDEX || 'test2',
+          index: process.env.INDEX || 'test3',
           body: {
             query: {
               match: {
@@ -106,139 +106,62 @@ const searchService = {
   },
   
   async searchDocumentWithHighlight(documentName, searchTerm) {
+    const removeAccents = (str) => str.normalize('NFD').replace(/\p{Diacritic}/gu, '').replace(/[’'`´]/g, '').replace(/œ/g, 'oe').replace(/æ/g, 'ae');
+    const cleanString = (str) => removeAccents(str)
+      .replace(/[^a-zA-Z0-9\s]/g, ' ') // replace non-alphanum with space
+      .replace(/_/g, ' ')
+      .replace(/\+/g, ' ')
+      .replace(/°/g, ' ')
+      .replace(/N°/g, 'N ')
+      .replace(/N\u00B0/g, 'N ')
+      .replace(/\s+/g, ' ')
+      .toLowerCase()
+      .trim();
     try {
       await ping();
-      
-      // Store the original document name for later file system operations
       const originalDocumentName = documentName;
-      
-      // Handle search term
+      const decodedDocumentName = decodeURIComponent(originalDocumentName);
       const lowerSearchTerm = ' ' + searchTerm.toLowerCase();
-      
-      // Normalize document name to improve matching chances
-      // Replace URL encoded characters and handle special characters
       let normalizedDocName = documentName;
       try {
-        // Try to decode any remaining URL encoded characters
         if (normalizedDocName.includes('%')) {
           normalizedDocName = decodeURIComponent(normalizedDocName);
         }
       } catch (e) {
         console.warn('Error decoding document name:', e.message);
       }
-      
-      normalizedDocName = normalizedDocName
-        .replace(/_/g, ' ')
-        .replace(/\+/g, ' ')
-        .replace(/°/g, ' ')
-        .replace(/N°/g, 'N ')
-        .replace(/N\u00B0/g, 'N ') // Handle degree symbol
-        .replace(/\u00B0/g, ' ')   // Handle degree symbol
-        .replace(/\s+/g, ' ')
-        .trim();
-      
-      console.log('Searching for document:', {
-        documentName: normalizedDocName,
-        originalName: documentName,
-        searchTerm: lowerSearchTerm,
-        index: process.env.INDEX || 'test2'
-      });
-      
-      // Try multiple query types to find the document
-      let searchResponse;
-      try {
-        // First try a simple search with multi_match for better flexibility
-        searchResponse = await esClient.search({
-          index: process.env.INDEX || 'test2',
-          body: {
-            query: {
-              multi_match: {
-                query: normalizedDocName,
-                fields: ["file.filename", "file.filename.keyword"],
-                type: "best_fields",
-                fuzziness: "AUTO"
-              }
-            }
-          }
-        });
-
-        // If no results, try with a more specific query approach
-        if (searchResponse.hits.hits.length === 0) {
-          // Extract meaningful parts of the filename
-          const filenameParts = normalizedDocName.split(/[_\s.]+/).filter(part => part.length > 2);
-          const searchTerms = filenameParts.map(term => term.toLowerCase());
-          
-          console.log('Trying with search terms:', searchTerms);
-          
-          // Add special handling for Décret with N° format
-          let hasDecretFormat = false;
-          if (normalizedDocName.toLowerCase().includes('décret') || normalizedDocName.toLowerCase().includes('decret')) {
-            // Look for patterns like N°2019 or N 2019 or N2019
-            const decretNumberMatch = normalizedDocName.match(/N[\s°]?(\d+)/i);
-            if (decretNumberMatch && decretNumberMatch[1]) {
-              hasDecretFormat = true;
-              // Add the decree number as a separate search term
-              searchTerms.push(decretNumberMatch[1]);
-              console.log('Added decree number to search terms:', decretNumberMatch[1]);
-            }
-          }
-          
-          // Build a should query with the important terms
-          const shouldClauses = searchTerms.map(term => ({
-            wildcard: {
-              "file.filename": {
-                value: `*${term}*`,
-                boost: 1.0
-              }
-            }
-          }));
-          
+      // Try multiple normalization strategies
+      const variants = [
+        normalizedDocName,
+        cleanString(normalizedDocName),
+        cleanString(removeAccents(normalizedDocName)),
+        cleanString(normalizedDocName).replace(/\s+/g, ''),
+        cleanString(normalizedDocName).replace(/\s+/g, '-'),
+        cleanString(normalizedDocName).replace(/\s+/g, '_'),
+      ];
+      let searchResponse = null;
+      for (const variant of variants) {
+        try {
           searchResponse = await esClient.search({
-            index: process.env.INDEX || 'test2',
+            index: process.env.INDEX || 'test3',
             body: {
               query: {
-                bool: {
-                  should: shouldClauses,
-                  minimum_should_match: Math.max(1, Math.ceil(searchTerms.length * 0.3)) // Match at least 30% of the terms or at least 1
+                multi_match: {
+                  query: variant,
+                  fields: ["file.filename", "file.filename.keyword"],
+                  type: "best_fields",
+                  fuzziness: "AUTO"
                 }
               }
             }
           });
-          
-          // If still no results, try a broader search
-          if (searchResponse.hits.hits.length === 0 && searchTerms.length > 2) {
-            console.log('Trying with broader search');
-            
-            // Take the most significant terms (longer than 4 chars)
-            const significantTerms = searchTerms.filter(term => term.length > 4);
-            
-            if (significantTerms.length > 0) {
-              const broadShouldClauses = significantTerms.map(term => ({
-                wildcard: {
-                  "file.filename": {
-                    value: `*${term}*`,
-                    boost: 1.0
-                  }
-                }
-              }));
-              
-              searchResponse = await esClient.search({
-                index: process.env.INDEX || 'test2',
-                body: {
-                  query: {
-                    bool: {
-                      should: broadShouldClauses,
-                      minimum_should_match: 1 // Match at least one significant term
-                    }
-                  }
-                }
-              });
-            }
+          if (searchResponse.hits.hits.length > 0) {
+            console.log('Found document with variant:', variant);
+            break;
           }
+        } catch (e) {
+          // continue to next variant
         }
-      } catch (searchError) {
-        console.error('Error during search:', searchError.message);
-        throw new Error('Document not found');
       }
       
       // If no results, we'll try a direct query using the document name
@@ -247,7 +170,7 @@ const searchService = {
         
         // Get all documents and check for similar names
         const allDocsResponse = await esClient.search({
-          index: process.env.INDEX || 'test2',
+          index: process.env.INDEX || 'test3',
           body: {
             size: 500, // Increase to get more potential matches
             query: {
@@ -310,7 +233,7 @@ const searchService = {
             
             // Search using the matched name
             searchResponse = await esClient.search({
-              index: process.env.INDEX || 'test2',
+              index: process.env.INDEX || 'test3',
               body: {
                 query: {
                   match_phrase: {
@@ -487,6 +410,120 @@ const searchService = {
         }
       }
       
+      // If still not found, try fuzzy matching against all files in the directory
+      if (!localFilePath) {
+        try {
+          const files = fs.readdirSync(LOCAL_PDF_DIRECTORY);
+          const target = decodedDocumentName.toLowerCase().replace(/\.pdf$/, '');
+          let bestMatch = null;
+          let bestScore = 0;
+          let substringMatch = null;
+          for (const file of files) {
+            const fileNoExt = file.toLowerCase().replace(/\.pdf$/, '');
+            // Substring logic: file is substring of target or vice versa
+            if (target.includes(fileNoExt) || fileNoExt.includes(target)) {
+              if (!substringMatch || fileNoExt.length > substringMatch.length) {
+                substringMatch = file;
+              }
+            }
+            // Score: number of matching characters in sequence
+            let score = 0;
+            let i = 0, j = 0;
+            while (i < target.length && j < fileNoExt.length) {
+              if (target[i] === fileNoExt[j]) {
+                score++;
+                i++;
+                j++;
+              } else {
+                j++;
+              }
+            }
+            // Boost score for substring match
+            if (fileNoExt.includes(target) || target.includes(fileNoExt)) score += 10;
+            if (score > bestScore) {
+              bestScore = score;
+              bestMatch = file;
+            }
+          }
+          if (substringMatch) {
+            const candidatePath = path.join(LOCAL_PDF_DIRECTORY, substringMatch);
+            if (fs.existsSync(candidatePath)) {
+              localFilePath = candidatePath;
+              console.log('File found by substring match:', substringMatch);
+            }
+          } else if (bestMatch && bestScore > 5) { // Lowered threshold
+            const candidatePath = path.join(LOCAL_PDF_DIRECTORY, bestMatch);
+            if (fs.existsSync(candidatePath)) {
+              localFilePath = candidatePath;
+              console.log('File found by fuzzy match:', bestMatch, 'score:', bestScore);
+            }
+          } else {
+            console.log('No close match found in directory. Best fuzzy candidate:', bestMatch, 'score:', bestScore, 'Files present:', files);
+          }
+        } catch (e) {
+          console.warn('Error during fuzzy file search:', e.message);
+        }
+      }
+      
+      // --- NEW: Try prefix/substring/underscore/dash/accents-insensitive matching ---
+      if (!localFilePath) {
+        try {
+          const files = fs.readdirSync(LOCAL_PDF_DIRECTORY);
+          const targetBase = decodedDocumentName.toLowerCase().replace(/\.pdf$/, '');
+          const removeAccents = (str) => str.normalize('NFD').replace(/\p{Diacritic}/gu, '').replace(/[’'`´]/g, '').replace(/œ/g, 'oe').replace(/æ/g, 'ae');
+          let found = false;
+          for (const file of files) {
+            const fileNoExt = file.replace(/\.pdf$/, '');
+            const fileBase = fileNoExt.toLowerCase();
+            // Check prefix/substring
+            if (
+              targetBase.startsWith(fileBase) ||
+              fileBase.startsWith(targetBase) ||
+              targetBase.includes(fileBase) ||
+              fileBase.includes(targetBase)
+            ) {
+              localFilePath = path.join(LOCAL_PDF_DIRECTORY, file);
+              found = true;
+              console.log('File found by prefix/substring match:', file);
+              break;
+            }
+            // Check with underscores/dashes
+            const fileBaseUnderscore = fileBase.replace(/[_-]/g, ' ');
+            const targetBaseUnderscore = targetBase.replace(/[_-]/g, ' ');
+            if (
+              targetBaseUnderscore.startsWith(fileBaseUnderscore) ||
+              fileBaseUnderscore.startsWith(targetBaseUnderscore) ||
+              targetBaseUnderscore.includes(fileBaseUnderscore) ||
+              fileBaseUnderscore.includes(targetBaseUnderscore)
+            ) {
+              localFilePath = path.join(LOCAL_PDF_DIRECTORY, file);
+              found = true;
+              console.log('File found by underscore/dash-insensitive match:', file);
+              break;
+            }
+            // Check accents-insensitive
+            const fileBaseNoAccents = removeAccents(fileBase);
+            const targetBaseNoAccents = removeAccents(targetBase);
+            if (
+              targetBaseNoAccents.startsWith(fileBaseNoAccents) ||
+              fileBaseNoAccents.startsWith(targetBaseNoAccents) ||
+              targetBaseNoAccents.includes(fileBaseNoAccents) ||
+              fileBaseNoAccents.includes(targetBaseNoAccents)
+            ) {
+              localFilePath = path.join(LOCAL_PDF_DIRECTORY, file);
+              found = true;
+              console.log('File found by accents-insensitive match:', file);
+              break;
+            }
+          }
+          if (!found) {
+            console.log('No prefix/substring/underscore/dash/accents-insensitive match found in directory. Files present:', files);
+          }
+        } catch (e) {
+          console.warn('Error during prefix/substring/underscore/dash/accents-insensitive file search:', e.message);
+        }
+      }
+      
       if (fileExists) {
         const existingPdfBytes = fs.readFileSync(localFilePath);
         const pdfDoc = await PDFDocument.load(existingPdfBytes);
@@ -589,18 +626,148 @@ const searchService = {
       // Fallback : essayer plusieurs variantes du chemin de fichier si Elasticsearch n'a pas fourni un chemin valide
       if (!localFilePath) {
         console.log('Falling back to path guessing...');
-        const possiblePaths = [
-          path.join(LOCAL_PDF_DIRECTORY, decodedDocumentName),
-          path.join(LOCAL_PDF_DIRECTORY, documentName),
-          path.join(LOCAL_PDF_DIRECTORY, decodedDocumentName + '.pdf'),
-          path.join(LOCAL_PDF_DIRECTORY, documentName + '.pdf')
+        // Build all possible variants
+        const removeAccents = (str) => str.normalize('NFD').replace(/\p{Diacritic}/gu, '').replace(/[’'`´]/g, '').replace(/œ/g, 'oe').replace(/æ/g, 'ae');
+        const cleanString = (str) => removeAccents(str)
+          .replace(/[^a-zA-Z0-9\s]/g, ' ')
+          .replace(/_/g, ' ')
+          .replace(/\+/g, ' ')
+          .replace(/°/g, ' ')
+          .replace(/N°/g, 'N ')
+          .replace(/N\u00B0/g, 'N ')
+          .replace(/\s+/g, ' ')
+          .toLowerCase()
+          .trim();
+        const encodedDocumentName = encodeURIComponent(documentName);
+        const decodedDocumentName = decodeURIComponent(documentName);
+        const encodedDecodedDocumentName = encodeURIComponent(decodedDocumentName);
+        const normalizedDocumentName = cleanString(documentName);
+        const normalizedDecodedDocumentName = cleanString(decodedDocumentName);
+        const possibleNames = [
+          documentName,
+          decodedDocumentName,
+          encodedDocumentName,
+          encodedDecodedDocumentName,
+          normalizedDocumentName,
+          normalizedDecodedDocumentName
         ];
-        
+        const possiblePaths = [];
+        for (const name of possibleNames) {
+          possiblePaths.push(path.join(LOCAL_PDF_DIRECTORY, name));
+          possiblePaths.push(path.join(LOCAL_PDF_DIRECTORY, name + '.pdf'));
+        }
+        // Also try replacing spaces with underscores and dashes
+        for (const name of possibleNames) {
+          possiblePaths.push(path.join(LOCAL_PDF_DIRECTORY, name.replace(/ /g, '_')));
+          possiblePaths.push(path.join(LOCAL_PDF_DIRECTORY, name.replace(/ /g, '_') + '.pdf'));
+          possiblePaths.push(path.join(LOCAL_PDF_DIRECTORY, name.replace(/ /g, '-')));
+          possiblePaths.push(path.join(LOCAL_PDF_DIRECTORY, name.replace(/ /g, '-') + '.pdf'));
+        }
+        console.log('Trying the following filename variants for local PDF search:', possiblePaths);
         for (const testPath of possiblePaths) {
           if (fs.existsSync(testPath)) {
             localFilePath = testPath;
             console.log('File found at (fallback):', testPath);
             break;
+          }
+        }
+        // If still not found, try fuzzy matching against all files in the directory
+        if (!localFilePath) {
+          try {
+            const files = fs.readdirSync(LOCAL_PDF_DIRECTORY);
+            const target = decodedDocumentName.toLowerCase().replace(/\.pdf$/, '');
+            let bestMatch = null;
+            let bestScore = 0;
+            for (const file of files) {
+              const fileNoExt = file.toLowerCase().replace(/\.pdf$/, '');
+              // Score: number of matching characters in sequence
+              let score = 0;
+              let i = 0, j = 0;
+              while (i < target.length && j < fileNoExt.length) {
+                if (target[i] === fileNoExt[j]) {
+                  score++;
+                  i++;
+                  j++;
+                } else {
+                  j++;
+                }
+              }
+              // Boost score for substring match
+              if (fileNoExt.includes(target)) score += 10;
+              if (score > bestScore) {
+                bestScore = score;
+                bestMatch = file;
+              }
+            }
+            if (bestMatch && bestScore > 10) {
+              const candidatePath = path.join(LOCAL_PDF_DIRECTORY, bestMatch);
+              if (fs.existsSync(candidatePath)) {
+                localFilePath = candidatePath;
+                console.log('File found by fuzzy match:', bestMatch);
+              }
+            } else {
+              console.log('No close match found in directory. Files present:', files);
+            }
+          } catch (e) {
+            console.warn('Error during fuzzy file search:', e.message);
+          }
+        }
+        // --- NEW: Try prefix/substring/underscore/dash/accents-insensitive matching ---
+        if (!localFilePath) {
+          try {
+            const files = fs.readdirSync(LOCAL_PDF_DIRECTORY);
+            const targetBase = decodedDocumentName.toLowerCase().replace(/\.pdf$/, '');
+            const removeAccents = (str) => str.normalize('NFD').replace(/\p{Diacritic}/gu, '').replace(/[’'`´]/g, '').replace(/œ/g, 'oe').replace(/æ/g, 'ae');
+            let found = false;
+            for (const file of files) {
+              const fileNoExt = file.replace(/\.pdf$/, '');
+              const fileBase = fileNoExt.toLowerCase();
+              // Check prefix/substring
+              if (
+                targetBase.startsWith(fileBase) ||
+                fileBase.startsWith(targetBase) ||
+                targetBase.includes(fileBase) ||
+                fileBase.includes(targetBase)
+              ) {
+                localFilePath = path.join(LOCAL_PDF_DIRECTORY, file);
+                found = true;
+                console.log('File found by prefix/substring match:', file);
+                break;
+              }
+              // Check with underscores/dashes
+              const fileBaseUnderscore = fileBase.replace(/[_-]/g, ' ');
+              const targetBaseUnderscore = targetBase.replace(/[_-]/g, ' ');
+              if (
+                targetBaseUnderscore.startsWith(fileBaseUnderscore) ||
+                fileBaseUnderscore.startsWith(targetBaseUnderscore) ||
+                targetBaseUnderscore.includes(fileBaseUnderscore) ||
+                fileBaseUnderscore.includes(targetBaseUnderscore)
+              ) {
+                localFilePath = path.join(LOCAL_PDF_DIRECTORY, file);
+                found = true;
+                console.log('File found by underscore/dash-insensitive match:', file);
+                break;
+              }
+              // Check accents-insensitive
+              const fileBaseNoAccents = removeAccents(fileBase);
+              const targetBaseNoAccents = removeAccents(targetBase);
+              if (
+                targetBaseNoAccents.startsWith(fileBaseNoAccents) ||
+                fileBaseNoAccents.startsWith(targetBaseNoAccents) ||
+                targetBaseNoAccents.includes(fileBaseNoAccents) ||
+                fileBaseNoAccents.includes(targetBaseNoAccents)
+              ) {
+                localFilePath = path.join(LOCAL_PDF_DIRECTORY, file);
+                found = true;
+                console.log('File found by accents-insensitive match:', file);
+                break;
+              }
+            }
+            if (!found) {
+              console.log('No prefix/substring/underscore/dash/accents-insensitive match found in directory. Files present:', files);
+            }
+          } catch (e) {
+            console.warn('Error during prefix/substring/underscore/dash/accents-insensitive file search:', e.message);
           }
         }
       }

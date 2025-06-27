@@ -90,39 +90,28 @@ async function searchRoutes(fastify, options) {
     }
   });
   // Convert to GET route only for highlightera2
-  fastify.get('/highlightera2/:documentName/:searchTerm', {
-    schema: {
-      params: {
-        type: 'object',
-        required: ['documentName', 'searchTerm'],
-        properties: {
-          documentName: { type: 'string' },
-          searchTerm: { type: 'string' }
-        }
-      }
-    }
-  }, async (request, reply) => {
+  fastify.get('/highlightera2/*', async (request, reply) => {
     try {
-      // Add detailed logging for better debugging
-      console.log('Received highlightera2 request with:', {
-        params: request.params,
-        url: request.url,
-        method: request.method,
-        headers: request.headers
-      });
-      
-      // Ensure parameters are available before processing
-      if (!request.params.documentName || !request.params.searchTerm) {
+      // Remove leading slash and split by last slash to get documentName and searchTerm
+      const path = request.params['*'] || '';
+      const lastSlash = path.lastIndexOf('/');
+      if (lastSlash === -1) {
         return reply.code(400).send({
           error: 'Bad Request',
           message: 'Document name and search term are required'
         });
       }
-      
+      let documentName = path.substring(0, lastSlash);
+      let searchTerm = path.substring(lastSlash + 1);
+      // Log for debugging
+      console.log('Wildcard highlightera2 request:', { documentName, searchTerm, url: request.url });
+      // Attach to params for controller compatibility
+      request.params.documentName = documentName;
+      request.params.searchTerm = searchTerm;
       await searchController.highlightDocument(request, reply);
       return reply;
     } catch (error) {
-      fastify.log.error(`Error in highlightera2 route: ${error.message}`);
+      fastify.log.error(`Error in wildcard highlightera2 route: ${error.message}`);
       return reply.status(500).send({ error: 'Internal Server Error' });
     }
   });
