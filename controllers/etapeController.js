@@ -11,7 +11,11 @@ const {
 } = require("../models");
 const { v4: uuidv4 } = require("uuid");
 const fileHandler = require('../services/fileHandler');
-const { fileTypeFromBuffer } = require('file-type');
+// Correction ESM pour file-type
+let fileTypeFromBuffer;
+(async () => {
+  ({ fileTypeFromBuffer } = await import('file-type'));
+})();
 
 const isUUID = (id) => {
   const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

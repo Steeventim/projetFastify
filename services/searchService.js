@@ -1,6 +1,5 @@
 const { Client } = require('@elastic/elasticsearch');
 const { PDFDocument } = require('pdf-lib');
-const pdfParse = require('pdf-parse');
 const fs = require('fs');
 const path = require('path');
 require('dotenv').config();
@@ -542,9 +541,11 @@ const searchService = {
       if (fileExists) {
         const existingPdfBytes = fs.readFileSync(localFilePath);
         const pdfDoc = await PDFDocument.load(existingPdfBytes);
-        const pdfData = await pdfParse(existingPdfBytes);
-        const numPages = pdfData.numpages;
-        const pagesText = pdfData.text.split('\n\n');
+        // Import dynamique ESM pour extractPdfText
+        const { extractPdfText } = await import('../utils/pdfTextExtractor.mjs');
+        const { text, numpages } = await extractPdfText(existingPdfBytes);
+        const numPages = numpages;
+        const pagesText = text.split('\n\n');
         const newPdfDoc = await PDFDocument.create();
 
         const normalizeText = (text) => text.replace(/\s+/g, ' ').trim().toLowerCase();
@@ -795,10 +796,12 @@ const searchService = {
       // Lire le fichier PDF
       const existingPdfBytes = fs.readFileSync(localFilePath);
       const pdfDoc = await PDFDocument.load(existingPdfBytes);
-      const pdfData = await pdfParse(existingPdfBytes);
+      // Import dynamique ESM pour extractPdfText
+      const { extractPdfText } = await import('../utils/pdfTextExtractor.mjs');
+      const { text, numpages } = await extractPdfText(existingPdfBytes);
       
-      const totalPages = pdfData.numpages;
-      const fullText = pdfData.text;
+      const totalPages = numpages;
+      const fullText = text;
       
       console.log(`PDF loaded: ${totalPages} pages, ${fullText.length} characters`);
       

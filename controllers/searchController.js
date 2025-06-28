@@ -39,11 +39,12 @@ const searchController = {
       const searchResponse = await searchService.searchWithHighlight(searchTerm);
       
       if (!searchResponse || searchResponse.hits.total.value === 0) {
-        return reply.code(404).send({
-          success: false,
-          error: 'Not Found',
-          message: 'No results found for the search term',
-          searchTerm
+        return reply.send({
+          success: true,
+          searchTerm,
+          totalResults: 0,
+          data: [],
+          message: 'Aucun résultat trouvé pour ce terme de recherche.'
         });
       }
 
@@ -95,13 +96,15 @@ const searchController = {
       const searchResponse = await searchService.searchWithHighlight(searchTerm);
       
       if (!searchResponse || searchResponse.hits.total.value === 0) {
-        return reply.code(404).send({
-          success: false,
-          error: 'Not Found',
-          message: 'No results found for the search term',
+        return reply.send({
+          success: true,
           documentName,
-          searchTerm
-        });      }      // Find or filter documents by name if needed
+          searchTerm,
+          totalResults: 0,
+          data: [],
+          message: 'Aucun résultat trouvé pour ce terme de recherche.'
+        });
+      }      // Find or filter documents by name if needed
       const relevantHits = searchResponse.hits.hits.filter(hit => {
         return hit._source.filename && hit._source.filename.includes(documentName);
       });
@@ -158,11 +161,12 @@ const searchController = {
       const response = await searchService.searchWithHighlight(searchTerm);
       
       if (!response || response.hits.total.value === 0) {
-        return reply.code(404).send({
-          success: false,
-          error: 'Not Found',
-          message: 'No results found for the search term',
-          searchTerm
+        return reply.send({
+          success: true,
+          searchTerm,
+          totalResults: 0,
+          data: [],
+          message: 'Aucun résultat trouvé pour ce terme de recherche.'
         });
       }
 
@@ -246,10 +250,13 @@ const searchController = {
 
       if (!searchResponse || searchResponse.hits.hits.length === 0) {
         await t.rollback();
-        return reply.code(404).send({
-          success: false,
-          error: 'Not Found',
-          message: 'Document not found'
+        return reply.send({
+          success: true,
+          documentName,
+          searchTerm,
+          totalResults: 0,
+          data: [],
+          message: 'Aucun résultat trouvé pour ce document.'
         });
       }
 
