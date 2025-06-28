@@ -289,8 +289,11 @@ const searchController = {
       document = await createOrUpdateDocument(document, documentName, documentUrl, t);
       await t.commit();
 
-      // Générer le PDF physique simplifié (uniquement pages avec correspondances)
-      console.log('Generating simplified PDF with only matching pages...');
+      // Générer le PDF physique structuré en 3 parties:
+      // 1. Première page du document original
+      // 2. Pages avec résultats de recherche  
+      // 3. Dernière page du document original
+      console.log('Generating structured PDF with 3 parts: first page + search results + last page...');
       const pdfBuffer = await searchService.generateStructuredPDF(previewResult, documentName, searchTerm);
 
       // Configurer la réponse pour afficher le PDF dans le navigateur

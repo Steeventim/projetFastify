@@ -491,12 +491,16 @@ const searchService = {
     }
   },
 
-  // Nouvelle fonction pour générer un PDF physique structuré en 3 parties
+  // Nouvelle fonction pour générer un PDF physique structuré en 3 parties:
+  // 1. Première page du document original
+  // 2. Pages avec résultats de recherche
+  // 3. Dernière page du document original
   async generateStructuredPDF(previewData, documentName, searchTerm) {
     const { rgb, StandardFonts } = require('pdf-lib');
 
     try {
-      console.log('=== generateStructuredPDF START ===');
+      console.log('=== generateStructuredPDF START - 3 PARTIES ===');
+      console.log('Structure: Première page + Pages avec résultats + Dernière page');
       console.log('previewData received:', {
         documentInfo: previewData.documentInfo,
         searchInfo: previewData.searchInfo,
@@ -530,35 +534,84 @@ const searchService = {
         console.log('No valid physical path for original document');
       }
 
-      // Charger les polices pour le contenu des pages (si nécessaire)
+      // Charger les polices pour les pages de fallback (si nécessaire)
       const font = await newPdfDoc.embedFont(StandardFonts.Helvetica);
       const boldFont = await newPdfDoc.embedFont(StandardFonts.HelveticaBold);
+       // Système de déduplication : tracker les pages déjà ajoutées
+      const addedPages = new Set();
+      const totalPages = originalPages ? originalPages.length : 0;
       
-      console.log('Fonts loaded, skipping title page generation');
+      console.log(`=== PDF Structure Plan ===`);
+      console.log(`Total pages in original: ${totalPages}`);
+      
+      // Analyser les pages avec résultats pour détecter les conflits potentiels
+      const pagesWithMatches = previewData.previewPages?.filter(p => p.hasMatches) || [];
+      const matchPageNumbers = pagesWithMatches.map(p => p.pageNumber);
+      
+      console.log(`Pages with search results: ${pagesWithMatches.length} - [${matchPageNumbers.join(', ')}]`);
+      console.log(`First page conflicts: ${matchPageNumbers.includes(1) ? 'YES' : 'NO'}`);
+      console.log(`Last page conflicts: ${matchPageNumbers.includes(totalPages) ? 'YES' : 'NO'}`);
+      
+      // PARTIE 1: PREMIÈRE PAGE du document original (seulement si pas déjà dans les résultats)
+      console.log('=== PARTIE 1: PREMIÈRE PAGE ===');
+      const firstPageHasMatches = matchPageNumbers.includes(1);
+      
+      if (!firstPageHasMatches) {
+        console.log('Adding FIRST page of original document (no search results on this page)...');
+        if (originalPdfDoc && originalPages && originalPages.length > 0) {
+          try {
+            const [firstPage] = await newPdfDoc.copyPages(originalPdfDoc, [0]);
+            newPdfDoc.addPage(firstPage);
+            addedPages.add(1);
+            console.log('✅ First page added successfully (Page 1)');
+          } catch (firstPageError) {
+            console.error('❌ Error copying first page:', firstPageError.message);
+            this.createFallbackPage(newPdfDoc, 'PREMIÈRE PAGE - Non disponible', documentName, font, boldFont);
+          }
+        } else {
+          console.log('No original document available, creating info page for first page');
+          this.createFallbackPage(newPdfDoc, 'PREMIÈRE PAGE - Document non accessible', documentName, font, boldFont);
+        }
+      } else {
+        console.log('⚠️ Skipping separate first page - it contains search results and will be included in Part 2');
+      }
 
-      // Traiter uniquement les pages de prévisualisation avec correspondances
-      if (previewData.previewPages && previewData.previewPages.length > 0) {
-        for (const page of previewData.previewPages) {
+      // PARTIE 2: PAGES AVEC RÉSULTATS DE RECHERCHE
+      console.log('=== PARTIE 2: PAGES AVEC RÉSULTATS ===');
+      if (pagesWithMatches.length > 0) {
+        console.log(`Processing ${pagesWithMatches.length} pages with search results...`);
+
+        for (const page of pagesWithMatches) {
+          const pageNumber = page.pageNumber;
+          
+          // Vérifier si cette page n'a pas déjà été ajoutée
+          if (addedPages.has(pageNumber)) {
+            console.log(`⚠️ Skipping page ${pageNumber} - already added`);
+            continue;
+          }
+          
           let pageAdded = false;
           
-          // Essayer de copier la page originale d'abord
-          if (originalPdfDoc && originalPages[page.pageNumber - 1]) {
+          // Essayer de copier la page originale avec correspondances
+          if (originalPdfDoc && originalPages[pageNumber - 1]) {
             try {
-              const [copiedPage] = await newPdfDoc.copyPages(originalPdfDoc, [page.pageNumber - 1]);
+              console.log(`Adding page ${pageNumber} with ${page.matchCount || 'unknown'} matches...`);
+              const [copiedPage] = await newPdfDoc.copyPages(originalPdfDoc, [pageNumber - 1]);
               newPdfDoc.addPage(copiedPage);
-              console.log(`Copied original page ${page.pageNumber}`);
+              addedPages.add(pageNumber);
+              console.log(`✅ Copied original page ${pageNumber} with search results`);
               pageAdded = true;
             } catch (copyError) {
-              console.log(`Failed to copy page ${page.pageNumber}:`, copyError.message);
+              console.log(`❌ Failed to copy page ${pageNumber}:`, copyError.message);
             }
           }
           
-          // Si la copie a échoué, créer une page de contenu texte
+          // Si la copie a échoué, créer une page de contenu texte avec les résultats
           if (!pageAdded) {
             const contentPage = newPdfDoc.addPage([612, 792]);
             
-            // En-tête de page
-            contentPage.drawText(`Page ${page.pageNumber} - ${page.pageType || 'contenu'}`, {
+            // En-tête de page avec information de correspondances
+            contentPage.drawText(`Page ${pageNumber} - RÉSULTATS DE RECHERCHE`, {
               x: 50,
               y: 750,
               size: 14,
@@ -567,7 +620,7 @@ const searchService = {
             });
             
             if (page.hasMatches) {
-              contentPage.drawText(`${page.matchCount || 0} occurrence(s) trouvée(s)`, {
+              contentPage.drawText(`🔍 ${page.matchCount || 0} correspondance(s) trouvée(s) pour "${searchTerm}"`, {
                 x: 50,
                 y: 730,
                 size: 10,
@@ -577,13 +630,13 @@ const searchService = {
             }
             
             // Contenu de la page (limité et formaté)
-            const content = (page.content || '').substring(0, 2000); // Limite à 2000 caractères
+            const content = (page.content || '').substring(0, 2000);
             const lines = content.split('\n');
             let yPosition = 700;
             
             lines.forEach((line) => {
               if (yPosition > 50 && line.trim()) {
-                const trimmedLine = line.substring(0, 80); // Limite de 80 caractères par ligne
+                const trimmedLine = line.substring(0, 80);
                 contentPage.drawText(trimmedLine, {
                   x: 50,
                   y: yPosition,
@@ -595,81 +648,65 @@ const searchService = {
               }
             });
             
-            console.log(`Created content page for page ${page.pageNumber}`);
+            addedPages.add(pageNumber);
+            console.log(`✅ Created fallback content page for page ${pageNumber}`);
           }
         }
+      } else {
+        console.log('No pages with search results found, adding info page');
+        const noResultsPage = newPdfDoc.addPage([612, 792]);
+        noResultsPage.drawText('AUCUN RÉSULTAT TROUVÉ', {
+          x: 50,
+          y: 400,
+          size: 16,
+          font: boldFont,
+          color: rgb(0.8, 0, 0)
+        });
+        noResultsPage.drawText(`Terme recherché: "${searchTerm}"`, {
+          x: 50,
+          y: 360,
+          size: 12,
+          font: font,
+          color: rgb(0, 0, 0)
+        });
       }
 
-      // 3. Ajouter une page de résumé finale
-      const summaryPage = newPdfDoc.addPage([612, 792]);
+      // PARTIE 3: DERNIÈRE PAGE du document original (seulement si pas déjà dans les résultats)
+      console.log('=== PARTIE 3: DERNIÈRE PAGE ===');
+      const lastPageHasMatches = matchPageNumbers.includes(totalPages);
+      const isLastPageSameAsFirst = (totalPages === 1);
       
-      summaryPage.drawText('RÉSUMÉ DE LA RECHERCHE', {
-        x: 50,
-        y: 720,
-        size: 18,
-        font: boldFont,
-        color: rgb(0, 0, 0.8)
-      });
-      
-      summaryPage.drawText(`Document analysé: ${previewData.documentInfo?.filename || documentName}`, {
-        x: 50,
-        y: 680,
-        size: 12,
-        font: font,
-        color: rgb(0, 0, 0)
-      });
-      
-      summaryPage.drawText(`Pages totales du document: ${previewData.documentInfo?.totalPages || 'N/A'}`, {
-        x: 50,
-        y: 660,
-        size: 12,
-        font: font,
-        color: rgb(0, 0, 0)
-      });
-      
-      summaryPage.drawText(`Type de prévisualisation: ${previewData.documentInfo?.previewType || 'Standard'}`, {
-        x: 50,
-        y: 640,
-        size: 12,
-        font: font,
-        color: rgb(0, 0, 0)
-      });
-      
-      summaryPage.drawText('Structure du PDF généré:', {
-        x: 50,
-        y: 610,
-        size: 12,
-        font: boldFont,
-        color: rgb(0, 0, 0)
-      });
-      
-      summaryPage.drawText('• Page de titre avec informations de recherche', {
-        x: 70,
-        y: 590,
-        size: 10,
-        font: font,
-        color: rgb(0, 0, 0)
-      });
-      
-      summaryPage.drawText('• Pages du document avec correspondances trouvées', {
-        x: 70,
-        y: 575,
-        size: 10,
-        font: font,
-        color: rgb(0, 0, 0)
-      });
-      
-      summaryPage.drawText('• Page de résumé et statistiques', {
-        x: 70,
-        y: 560,
-        size: 10,
-        font: font,
-        color: rgb(0, 0, 0)
-      });
-      
-      console.log('Summary page added');
+      if (!lastPageHasMatches && !isLastPageSameAsFirst && totalPages > 0) {
+        console.log(`Adding LAST page of original document (page ${totalPages}, no search results on this page)...`);
+        if (originalPdfDoc && originalPages && originalPages.length > 0) {
+          try {
+            const lastPageIndex = originalPages.length - 1;
+            const [lastPage] = await newPdfDoc.copyPages(originalPdfDoc, [lastPageIndex]);
+            newPdfDoc.addPage(lastPage);
+            addedPages.add(totalPages);
+            console.log(`✅ Last page added successfully (page ${lastPageIndex + 1})`);
+          } catch (lastPageError) {
+            console.error('❌ Error copying last page:', lastPageError.message);
+            this.createFallbackPage(newPdfDoc, 'DERNIÈRE PAGE - Non disponible', documentName, font, boldFont);
+          }
+        } else {
+          console.log('No original document available, creating info page for last page');
+          this.createFallbackPage(newPdfDoc, 'DERNIÈRE PAGE - Document non accessible', documentName, font, boldFont);
+        }
+      } else if (lastPageHasMatches) {
+        console.log('⚠️ Skipping separate last page - it contains search results and was included in Part 2');
+      } else if (isLastPageSameAsFirst) {
+        console.log('⚠️ Skipping last page - document has only one page (same as first)');
+      } else {
+        console.log('⚠️ Skipping last page - no valid original document');
+      }
 
-      // Générer et retourner le PDF
+      // Générer et retourner le PDF final
+      console.log(`=== RÉSUMÉ DE GÉNÉRATION ===`);
+      console.log(`Pages uniques ajoutées: ${addedPages.size} - [${Array.from(addedPages).sort((a, b) => a - b).join(', ')}]`);
+      console.log(`Total pages dans le PDF final: ${newPdfDoc.getPageCount()}`);
+      console.log(`Structure: ${!firstPageHasMatches ? '✅ Première page' : '⚠️ Première page (incluse dans résultats)'} ✅ ${pagesWithMatches.length} page(s) résultats ${!lastPageHasMatches && !isLastPageSameAsFirst ? '✅ Dernière page' : '⚠️ Dernière page (incluse dans résultats ou identique)'}`);
+      
       const pdfBytes = await newPdfDoc.save();
       console.log(`=== generateStructuredPDF END - Generated ${pdfBytes.length} bytes ===`);
       
@@ -684,6 +721,27 @@ const searchService = {
       });
       throw error;
     }
+  },
+
+  // Méthode utilitaire pour créer une page de fallback
+  createFallbackPage(pdfDoc, title, documentName, font, boldFont) {
+    const { rgb } = require('pdf-lib');
+    const infoPage = pdfDoc.addPage([612, 792]);
+    infoPage.drawText(title, {
+      x: 50,
+      y: 400,
+      size: 16,
+      font: boldFont,
+      color: rgb(0.8, 0, 0)
+    });
+    infoPage.drawText(`Document: ${documentName}`, {
+      x: 50,
+      y: 360,
+      size: 12,
+      font: font,
+      color: rgb(0, 0, 0)
+    });
+    return infoPage;
   },
 
   // Méthode utilitaire pour wrapper le texte

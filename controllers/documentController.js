@@ -12,6 +12,30 @@ const {
 const { v4: uuidv4 } = require("uuid");
 const { createNotification } = require("../utils/notificationUtils"); // Import de createNotification
 const fileHandler = require('../services/fileHandler');
+const PDFViewerUrlGenerator = require('../utils/pdfViewerUrlGenerator');
+
+// Initialize PDF URL generator
+const pdfUrlGenerator = new PDFViewerUrlGenerator(process.env.BASE_URL || 'http://localhost:3003');
+
+/**
+ * Génère une URL de visualisation PDF pour un document avec gestion d'erreur
+ * @param {string} documentTitle - Titre du document
+ * @param {string} searchTerm - Terme de recherche (par défaut 'content')
+ * @param {string} fallbackUrl - URL de fallback si génération échoue
+ * @returns {string} URL de visualisation PDF
+ */
+const generateDocumentViewerUrl = (documentTitle, searchTerm = 'content', fallbackUrl = '') => {
+  try {
+    if (!documentTitle || typeof documentTitle !== 'string') {
+      console.warn('Invalid document title for URL generation:', documentTitle);
+      return fallbackUrl;
+    }
+    return pdfUrlGenerator.generateViewerUrl(documentTitle.trim(), searchTerm);
+  } catch (error) {
+    console.error('Error generating PDF viewer URL:', error);
+    return fallbackUrl;
+  }
+};
 
 const verifyDocumentStatus = async (document) => {
   try {
@@ -633,6 +657,7 @@ const documentController = {
             transferStatus: updatedDocument.transferStatus,
             transferTimestamp: updatedDocument.transferTimestamp,
             url: updatedDocument.url,
+            viewerUrl: generateDocumentViewerUrl(updatedDocument.Title, 'content', updatedDocument.url || ''),
             currentEtape: currentEtape,
           },
           comments: updatedDocument.commentaires || [],
@@ -956,7 +981,7 @@ const documentController = {
             status: doc.status,
             transferStatus: doc.transferStatus,
             transferTimestamp: doc.transferTimestamp,
-            url: doc.url,
+            url: generateDocumentViewerUrl(doc.Title, 'content', doc.url || ''),
             destinator: doc.UserDestinatorName,
             comments:
               doc.commentaires?.map((c) => ({
@@ -1148,6 +1173,7 @@ const documentController = {
           transferStatus: latestDocument.transferStatus,
           transferTimestamp: latestDocument.transferTimestamp || "",
           url: latestDocument.url || "",
+          viewerUrl: generateDocumentViewerUrl(latestDocument.Title, 'content', latestDocument.url || ""),
           createdAt: latestDocument.createdAt,
           updatedAt: latestDocument.updatedAt,
           commentaires: latestDocument.commentaires?.map(comment => ({
@@ -1601,6 +1627,7 @@ const documentController = {
             createdAt: file.createdAt
           })),
           url: doc.url,
+          viewerUrl: generateDocumentViewerUrl(doc.Title, 'content', doc.url || ''),
           createdAt: doc.createdAt
         };
       });
