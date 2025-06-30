@@ -1,11 +1,12 @@
 // Extraction de texte PDF compatible Node.js 20+ et pdfjs-dist ESM (build legacy)
 import fs from 'fs';
 import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs';
-import { fileURLToPath } from 'url';
+import { fileURLToPath, pathToFileURL } from 'url';
 import { dirname, join } from 'path';
 const __dirname = dirname(fileURLToPath(import.meta.url));
-// Correction workerSrc : build legacy
-pdfjsLib.GlobalWorkerOptions.workerSrc = join(__dirname, '../node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs');
+// Correction workerSrc : build legacy (must be a file:// URL on Windows)
+const workerSrcPath = join(__dirname, '../node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs');
+pdfjsLib.GlobalWorkerOptions.workerSrc = pathToFileURL(workerSrcPath).href;
 
 /**
  * Extrait le texte d'un PDF (Buffer ou chemin)

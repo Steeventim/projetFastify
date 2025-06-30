@@ -108,11 +108,12 @@ const etapeController = {
           // Detect MIME type from content
           const fileType = await fileTypeFromBuffer(buffer);
           const mimetype = fileType ? fileType.mime : 'application/octet-stream';
+          // Use document.Title for folder naming
           const savedFile = await fileHandler.saveFile({
             originalname: file.name,
             content: buffer,
             mimetype,
-          }, documentId);
+          }, documentId, document.Title);
           const fileRecord = await File.create({
             idFile: uuidv4(),
             documentId,

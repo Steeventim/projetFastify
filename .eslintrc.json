@@ -11,6 +11,14 @@
     "ecmaVersion": "latest",
     "sourceType": "commonjs"
   },
+  "overrides": [
+    {
+      "files": ["*.mjs"],
+      "parserOptions": {
+        "sourceType": "module"
+      }
+    }
+  ],
   "rules": {
     "indent": ["error", 2],
     "quotes": ["error", "single"],
