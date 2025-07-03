@@ -13,7 +13,7 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = workerURL.href;
 /**
  * Extrait le texte d'un PDF (Buffer ou chemin)
  * @param {Buffer|string} pdfInput - Buffer PDF ou chemin de fichier
- * @returns {Promise<{text: string, numpages: number, pageTexts: string[]}>}
+ * @returns {Promise<{text: string, numpages: number}>}
  */
 export async function extractPdfText(pdfInput) {
   let data;
@@ -28,16 +28,11 @@ export async function extractPdfText(pdfInput) {
   const loadingTask = pdfjsLib.getDocument({ data });
   const pdf = await loadingTask.promise;
   let text = '';
-  const pageTexts = [];
-  
   for (let i = 1; i <= pdf.numPages; i++) {
     const page = await pdf.getPage(i);
     const content = await page.getTextContent();
-    const pageText = content.items.map(item => item.str).join(' ');
-    pageTexts.push(pageText);
-    text += pageText + '\n\n';
+    text += content.items.map(item => item.str).join(' ') + '\n\n';
   }
-  
   await pdf.destroy();
-  return { text, numpages: pdf.numPages, pageTexts };
+  return { text, numpages: pdf.numPages };
 }

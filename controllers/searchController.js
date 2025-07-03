@@ -52,12 +52,18 @@ const searchController = {
         success: true,
         searchTerm,
         totalResults: searchResponse.hits.total.value,
-        data: searchResponse.hits.hits.map(hit => ({
-          filename: hit._source.file?.filename || 'Unknown',
-          content: hit._source.content || '',
-          highlight: hit.highlight || null,
-          score: hit._score
-        }))
+        data: searchResponse.hits.hits
+          .filter(hit => {
+            // Additional server-side filtering to ensure content contains search term
+            const content = hit._source.content || '';
+            return content.toLowerCase().includes(searchTerm.toLowerCase());
+          })
+          .map(hit => ({
+            filename: hit._source.file?.filename || 'Unknown',
+            content: hit._source.content || '',
+            highlight: hit.highlight || null,
+            score: hit._score
+          }))
       });
 
     } catch (error) {
@@ -106,14 +112,21 @@ const searchController = {
         });
       }      // Find or filter documents by name if needed
       const relevantHits = searchResponse.hits.hits.filter(hit => {
-        return hit._source.filename && hit._source.filename.includes(documentName);
+        const filename = hit._source.filename || hit._source.file?.filename || '';
+        const content = hit._source.content || '';
+        
+        // Check if document name matches and content contains the search term
+        const nameMatches = filename.includes(documentName);
+        const contentContainsSearchTerm = content.toLowerCase().includes(searchTerm.toLowerCase());
+        
+        return nameMatches && contentContainsSearchTerm;
       });
 
       if (relevantHits.length === 0) {
         return reply.code(404).send({
           success: false,
           error: 'Not Found',
-          message: 'Document not found in search results',
+          message: 'Document not found in search results or does not contain the search term',
           documentName,
           searchTerm
         });
@@ -170,6 +183,21 @@ const searchController = {
         });
       }
 
+      // Filter results to ensure they contain the search term
+      const filteredResponse = {
+        ...response,
+        hits: {
+          ...response.hits,
+          hits: response.hits.hits.filter(hit => {
+            const content = hit._source?.content || '';
+            return content.toLowerCase().includes(searchTerm.toLowerCase());
+          })
+        }
+      };
+
+      // Update total count after filtering
+      filteredResponse.hits.total.value = filteredResponse.hits.hits.length;
+
       return reply.send({
         success: true,
         searchTerm: searchTerm,
@@ -177,7 +205,7 @@ const searchController = {
           original: searchTerm,
           encoded: encodeURIComponent(searchTerm)
         },
-        data: response
+        data: filteredResponse
       });
     } catch (error) {
       console.error('Error searching propositions:', {

@@ -5,7 +5,7 @@ const { URL } = require('url');
 /**
  * Wrapper CommonJS pour l'extracteur de texte PDF ESM
  * @param {Buffer|string} pdfInput - Buffer PDF ou chemin de fichier
- * @returns {Promise<{text: string, numpages: number, pageTexts: string[]}>}
+ * @returns {Promise<{text: string, numpages: number}>}
  */
 async function extractPdfText(pdfInput) {
   try {

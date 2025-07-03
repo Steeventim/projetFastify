@@ -53,11 +53,30 @@ const searchService = {
       // Try with highlighting first
       try {
         const response = await esClient.search({
-          index: process.env.INDEX || 'test3',
+          index: process.env.INDEX || 'test2',
           body: {
             query: {
-              match: {
-                content: searchTerm
+              bool: {
+                must: [
+                  {
+                    match_phrase: {
+                      content: {
+                        query: searchTerm,
+                        slop: 2  // Allow for slight word variations
+                      }
+                    }
+                  }
+                ],
+                should: [
+                  {
+                    match: {
+                      content: {
+                        query: searchTerm,
+                        minimum_should_match: "75%"
+                      }
+                    }
+                  }
+                ]
               }
             },
             highlight: {
@@ -70,7 +89,8 @@ const searchService = {
                   post_tags: ['</strong>']
                 }
               }
-            }
+            },
+            min_score: 0.5  // Minimum relevance score
           }
         });
 
@@ -85,13 +105,33 @@ const searchService = {
         console.log('Highlighting failed, searching without highlights:', highlightError.message);
         
         const response = await esClient.search({
-          index: process.env.INDEX || 'test3',
+          index: process.env.INDEX || 'test2',
           body: {
             query: {
-              match: {
-                content: searchTerm
+              bool: {
+                must: [
+                  {
+                    match_phrase: {
+                      content: {
+                        query: searchTerm,
+                        slop: 2  // Allow for slight word variations
+                      }
+                    }
+                  }
+                ],
+                should: [
+                  {
+                    match: {
+                      content: {
+                        query: searchTerm,
+                        minimum_should_match: "75%"
+                      }
+                    }
+                  }
+                ]
               }
-            }
+            },
+            min_score: 0.5  // Minimum relevance score
           }
         });
 
@@ -117,6 +157,17 @@ const searchService = {
       
       throw error;
     }
+  },
+
+  // Generate a mock search response when Elasticsearch is unavailable
+  generateMockSearchResponse(searchTerm) {
+    console.log('Generating mock search response for term:', searchTerm);
+    return {
+      hits: {
+        total: { value: 0 },
+        hits: []
+      }
+    };
   },
   
   async searchDocumentWithHighlight(documentName, searchTerm) {
@@ -157,7 +208,7 @@ const searchService = {
       for (const variant of variants) {
         try {
           searchResponse = await esClient.search({
-            index: process.env.INDEX || 'test3',
+            index: process.env.INDEX || 'test2',
             body: {
               query: {
                 multi_match: {
@@ -184,7 +235,7 @@ const searchService = {
         
         // Get all documents and check for similar names
         const allDocsResponse = await esClient.search({
-          index: process.env.INDEX || 'test3',
+          index: process.env.INDEX || 'test2',
           body: {
             size: 500, // Increase to get more potential matches
             query: {
@@ -247,7 +298,7 @@ const searchService = {
             
             // Search using the matched name
             searchResponse = await esClient.search({
-              index: process.env.INDEX || 'test3',
+              index: process.env.INDEX || 'test2',
               body: {
                 query: {
                   match_phrase: {
@@ -543,60 +594,33 @@ const searchService = {
         const pdfDoc = await PDFDocument.load(existingPdfBytes);
         // Utiliser le wrapper CommonJS pour éviter les problèmes d'import ESM
         const { extractPdfText } = require('../utils/pdfTextExtractorWrapper.js');
-        const { numpages, pageTexts } = await extractPdfText(existingPdfBytes);
+        const { text, numpages } = await extractPdfText(existingPdfBytes);
         const numPages = numpages;
+        const pagesText = text.split('\n\n');
         const newPdfDoc = await PDFDocument.create();
 
         const normalizeText = (text) => text.replace(/\s+/g, ' ').trim().toLowerCase();
-        const normalizedSearchTerm = lowerSearchTerm.trim(); // Remove the leading space that was added
-        
-        // Find pages that contain the search term
-        const matchingPages = [];
-        const pagesToInclude = new Set();
-        
-        console.log('Searching for term in pages:', normalizedSearchTerm);
-        
-        for (let i = 0; i < pageTexts.length; i++) {
-          const pageText = pageTexts[i] || '';
+        const searchTermInPage = (pageIndex) => {
+          const pageText = pagesText[pageIndex] || '';
           const normalizedText = normalizeText(pageText);
-          
-          if (normalizedText.includes(normalizedSearchTerm)) {
-            matchingPages.push(i + 1); // Convert to 1-based page numbers for logging
-            pagesToInclude.add(i); // Keep 0-based for array access
-            
-            // Add context pages (previous and next page)
-            if (i > 0) pagesToInclude.add(i - 1);
-            if (i < pageTexts.length - 1) pagesToInclude.add(i + 1);
-            
-            console.log(`Found search term on page ${i + 1}`);
+          return normalizedText.includes(lowerSearchTerm);
+        };
+
+        for (let i = 0; i < numPages; i++) {
+          if (i === 0) {
+            const [pageCopy] = await newPdfDoc.copyPages(pdfDoc, [i]);
+            newPdfDoc.addPage(pageCopy);
           }
-        }
-        
-        // Always include first and last page
-        pagesToInclude.add(0);
-        pagesToInclude.add(numPages - 1);
-        
-        console.log('Pages to include in PDF:', Array.from(pagesToInclude).map(p => p + 1).sort((a, b) => a - b));
-        console.log('Matching pages:', matchingPages);
-        
-        // Sort pages to include them in order
-        const sortedPages = Array.from(pagesToInclude).sort((a, b) => a - b);
-        
-        if (sortedPages.length > 0) {
-          const pagesToCopy = sortedPages.map(pageIndex => pageIndex); // 0-based for copyPages
-          const copiedPages = await newPdfDoc.copyPages(pdfDoc, pagesToCopy);
-          
-          copiedPages.forEach(page => {
-            newPdfDoc.addPage(page);
-          });
-        } else {
-          // If no matches found, include all pages
-          console.log('No matches found, including all pages');
-          const allPages = Array.from({ length: numPages }, (_, i) => i);
-          const copiedPages = await newPdfDoc.copyPages(pdfDoc, allPages);
-          copiedPages.forEach(page => {
-            newPdfDoc.addPage(page);
-          });
+
+          if (searchTermInPage(i)) {
+            const [pageCopy] = await newPdfDoc.copyPages(pdfDoc, [i]);
+            newPdfDoc.addPage(pageCopy);
+          }
+
+          if (i === numPages-1) {
+            const [pageCopy] = await newPdfDoc.copyPages(pdfDoc, [i]);
+            newPdfDoc.addPage(pageCopy);
+          }
         }
 
         console.log('Generated highlighted PDF for document:', documentName);
@@ -824,11 +848,28 @@ const searchService = {
       const existingPdfBytes = fs.readFileSync(localFilePath);
       // Utiliser le wrapper CommonJS pour éviter les problèmes d'import ESM
       const { extractPdfText } = require('../utils/pdfTextExtractorWrapper.js');
-      const { numpages, pageTexts } = await extractPdfText(existingPdfBytes);
+      const { text, numpages } = await extractPdfText(existingPdfBytes);
       
       const totalPages = numpages;
+      const fullText = text;
       
-      console.log(`PDF loaded: ${totalPages} pages, ${pageTexts.length} page texts extracted`);
+      console.log(`PDF loaded: ${totalPages} pages, ${fullText.length} characters`);
+      
+      // Méthode améliorée pour diviser le texte par pages
+      let pageTexts = [];
+      
+      // Essayer d'abord la division par form feed
+      if (fullText.includes('\f')) {
+        pageTexts = fullText.split('\f');
+      } else {
+        // Sinon, diviser par estimation basée sur la longueur
+        const avgPageLength = Math.ceil(fullText.length / totalPages);
+        for (let i = 0; i < totalPages; i++) {
+          const start = i * avgPageLength;
+          const end = Math.min((i + 1) * avgPageLength, fullText.length);
+          pageTexts.push(fullText.substring(start, end));
+        }
+      }
       
       // S'assurer qu'on a le bon nombre de pages
       while (pageTexts.length < totalPages) {
@@ -914,7 +955,7 @@ const searchService = {
       });
       
       // 3. Dernière page (si elle n'est pas déjà dans les résultats et différente de la première)
-      if (totalPages > 1 && pageTexts[totalPages - 1] &&
+      if (totalPages > 1 && pageTexts[totalPages - 1] && 
           !pagesWithMatches.some(p => p.pageNumber === totalPages) &&
           totalPages !== 1) {
         previewPages.push({
