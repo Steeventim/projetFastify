@@ -995,6 +995,7 @@ const documentController = {
     }
   },
   approveDocument: async (request, reply) => {
+    console.log("approveDocument called! Route:", request.raw.url);
     const { documentId, userId, etapeId, comments } = request.body;
     const files = request.files || {};
 

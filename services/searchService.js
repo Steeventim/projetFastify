@@ -9,7 +9,7 @@ const LOCAL_PDF_DIRECTORY = process.env.PDF_DIRECTORY || "C:\\Users\\laure\\Desk
 
 // Initialize Elasticsearch client with retry and timeout settings
 const esClient = new Client({
-  node: process.env.ELASTICSEARCH_NODE || 'http://192.168.50.100:9200',
+  node: process.env.ELASTICSEARCH_NODE || 'http://10.42.0.45:9200',
   maxRetries: 3,
   requestTimeout: 30000,
   sniffOnStart: true,
