@@ -53,7 +53,7 @@ const searchService = {
       // Try with highlighting first
       try {
         const response = await esClient.search({
-          index: process.env.INDEX || 'test2',
+          index: process.env.INDEX || 'test3',
           body: {
             query: {
               bool: {
@@ -105,7 +105,7 @@ const searchService = {
         console.log('Highlighting failed, searching without highlights:', highlightError.message);
         
         const response = await esClient.search({
-          index: process.env.INDEX || 'test2',
+          index: process.env.INDEX || 'test3',
           body: {
             query: {
               bool: {
@@ -208,7 +208,7 @@ const searchService = {
       for (const variant of variants) {
         try {
           searchResponse = await esClient.search({
-            index: process.env.INDEX || 'test2',
+            index: process.env.INDEX || 'test3',
             body: {
               query: {
                 multi_match: {
@@ -235,7 +235,7 @@ const searchService = {
         
         // Get all documents and check for similar names
         const allDocsResponse = await esClient.search({
-          index: process.env.INDEX || 'test2',
+          index: process.env.INDEX || 'test3',
           body: {
             size: 500, // Increase to get more potential matches
             query: {
@@ -298,7 +298,7 @@ const searchService = {
             
             // Search using the matched name
             searchResponse = await esClient.search({
-              index: process.env.INDEX || 'test2',
+              index: process.env.INDEX || 'test3',
               body: {
                 query: {
                   match_phrase: {

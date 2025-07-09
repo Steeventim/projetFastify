@@ -1,7 +1,7 @@
 // Extraction de texte PDF compatible Node.js 20+ et pdfjs-dist ESM (build legacy)
 import fs from 'fs';
 import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs';
-import { fileURLToPath } from 'url';
+import { fileURLToPath, pathToFileURL } from 'url';
 import { dirname, join } from 'path';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
