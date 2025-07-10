@@ -14,6 +14,7 @@ module.exports = (sequelize, DataTypes) => {
 
   Structure.associate = (models) => {
     Structure.hasMany(models.User, { foreignKey: 'structureId' });
+    Structure.hasMany(models.TypeProjet, { foreignKey: 'structureId', as: 'typeProjets' });
   };
 
   return Structure;

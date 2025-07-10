@@ -31,6 +31,21 @@ module.exports = {
         });
       }
 
+      // Add structureId to TypeProjets if it does not exist
+      const table = await queryInterface.describeTable('TypeProjets');
+      if (!table.structureId) {
+        await queryInterface.addColumn('TypeProjets', 'structureId', {
+          type: Sequelize.UUID,
+          allowNull: false,
+          references: {
+            model: 'Structures',
+            key: 'idStructure'
+          },
+          onUpdate: 'CASCADE',
+          onDelete: 'RESTRICT'
+        });
+      }
+
       // Create the junction table with correct column references
       const hasJunctionTable = await queryInterface.tableExists('EtapeTypeProjet');
       

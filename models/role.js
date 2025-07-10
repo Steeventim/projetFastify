@@ -24,10 +24,11 @@ module.exports = (sequelize, DataTypes) => {
       type: DataTypes.BOOLEAN,
       defaultValue: false
     },
-    permissions: {
-      type: DataTypes.ARRAY(DataTypes.STRING),
-      allowNull: true
-    }
+    // Remove the permissions array field as permissions are managed via RolePermissions junction table
+    // permissions: {
+    //   type: DataTypes.ARRAY(DataTypes.STRING),
+    //   allowNull: true
+    // }
 
   });
 
@@ -53,6 +54,14 @@ module.exports = (sequelize, DataTypes) => {
     Role.belongsToMany(models.User, { 
       through: 'UserRoles', 
       foreignKey: 'roleId' 
+    });
+
+    // Many-to-Many relationship with Permissions
+    Role.belongsToMany(models.Permission, {
+      through: 'RolePermissions',
+      foreignKey: 'roleId',
+      otherKey: 'permissionId',
+      as: 'permissions'
     });
 
     // One-to-Many relationship with Etapes

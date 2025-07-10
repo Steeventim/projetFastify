@@ -27,13 +27,19 @@ const authMiddleware = {
         }
       }
       
-      // Fetch user with roles
+      // Fetch user with roles and permissions
       const user = await User.findOne({
         where: { idUser: decoded.id },
         include: [{
           model: Role,
           through: { attributes: [] }, // Exclude junction table attributes
-          attributes: ['name', 'description', 'isSystemRole']
+          attributes: ['name', 'description', 'isSystemRole'],
+          include: [{
+            model: Permission,
+            as: 'permissions', // <-- Fix: use the alias defined in Role model
+            through: { attributes: [] },
+            attributes: ['LibellePerm']
+          }]
         }]
       });
 
@@ -44,6 +50,18 @@ const authMiddleware = {
           message: 'Invalid token' 
         });
       }
+
+      // Aggregate permissions from roles
+      const permissionsSet = new Set();
+      user.Roles.forEach(role => {
+        // Defensive: role.Permissions may be undefined if no permissions assigned
+        if (Array.isArray(role.Permissions)) {
+          role.Permissions.forEach(perm => {
+            permissionsSet.add(perm.LibellePerm);
+          });
+        }
+      });
+      const permissions = Array.from(permissionsSet);
 
       // Check if user is superadmin or admin
       const isSuperAdmin = user.Roles?.some(role => role.name === 'superadmin');
@@ -58,13 +76,15 @@ const authMiddleware = {
         PrenomUser: user.PrenomUser,
         isSuperAdmin,
         isAdmin,
-        roles: user.Roles || []
+        roles: user.Roles || [],
+        permissions
       };
 
       // Debug logging
       console.log('Token decoded:', decoded);
       console.log('User ID from token:', decoded.id);
       console.log('User ID in request:', request.user.idUser);
+      console.log('User permissions:', permissions);
 
     } catch (error) {
       console.error('Token verification error:', error);

@@ -12,10 +12,15 @@ module.exports = (sequelize, DataTypes) => {
       type: DataTypes.STRING,
       allowNull: false
     },
-    Description: DataTypes.STRING
+    Description: DataTypes.STRING,
+    structureId: {
+      type: DataTypes.UUID,
+      allowNull: false
+    }
   });
 
   TypeProjet.associate = (models) => {
+    TypeProjet.belongsTo(models.Structure, { foreignKey: 'structureId', as: 'structure' });
     TypeProjet.belongsToMany(models.Etape, { 
       through: 'EtapeTypeProjet', 
       foreignKey: 'idType',

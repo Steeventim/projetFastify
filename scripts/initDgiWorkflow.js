@@ -32,7 +32,7 @@ const { v4: uuidv4 } = require('uuid');
  * - Centralisation décisions, fluidification circuit, horodatage/signature numérique
  */
 
-async function initDgiWorkflow() {
+async function initDgiWorkflow(structureName = 'DGI') {
   const transaction = await sequelize.transaction();
   
   try {
@@ -89,13 +89,24 @@ async function initDgiWorkflow() {
 
     // 2. Création du TypeProjet "Recouvrement DGI"
     console.log('📂 Création du type de projet...');
-    
+    // Find or create the structure by name (NomStructure)
+    let structure = await require('../models').Structure.findOne({ where: { NomStructure: structureName }, transaction });
+    if (!structure) {
+      console.log(`ℹ️  Structure ${structureName} non trouvée, création...`);
+      structure = await require('../models').Structure.create({
+        idStructure: uuidv4(),
+        NomStructure: structureName,
+        DescriptionStructure: `Structure créée automatiquement pour le workflow (${structureName})`
+      }, { transaction });
+      console.log(`✅ Structure ${structureName} créée.`);
+    }
     const [typeProjet, typeCreated] = await TypeProjet.findOrCreate({
       where: { Libelle: 'Recouvrement DGI' },
       defaults: {
         idType: uuidv4(),
         Libelle: 'Recouvrement DGI',
-        Description: 'Workflow de traitement des documents de recouvrement fiscal'
+        Description: 'Workflow de traitement des documents de recouvrement fiscal',
+        structureId: structure.idStructure // <-- associate here
       },
       transaction
     });
@@ -323,7 +334,9 @@ async function displayWorkflowInfo() {
 
 // Exécution du script
 if (require.main === module) {
-  initDgiWorkflow()
+  // Allow passing structure name as a command line argument
+  const structureName = process.argv[2] || 'DGI';
+  initDgiWorkflow(structureName)
     .then(() => {
       return displayWorkflowInfo();
     })

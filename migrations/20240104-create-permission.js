@@ -27,6 +27,38 @@ module.exports = {
       },
     });
 
+    // Insert predefined permissions
+    await queryInterface.bulkInsert('Permissions', [
+      {
+        idPermission: require('uuid').v4(),
+        LibellePerm: 'Valider',
+        description: 'Permission to validate',
+        createdAt: new Date(),
+        updatedAt: new Date()
+      },
+      {
+        idPermission: require('uuid').v4(),
+        LibellePerm: 'Rechercher',
+        description: 'Permission to search',
+        createdAt: new Date(),
+        updatedAt: new Date()
+      },
+      {
+        idPermission: require('uuid').v4(),
+        LibellePerm: 'Transférer',
+        description: 'Permission to transfer',
+        createdAt: new Date(),
+        updatedAt: new Date()
+      },
+      {
+        idPermission: require('uuid').v4(),
+        LibellePerm: 'Rejeter',
+        description: 'Permission to reject',
+        createdAt: new Date(),
+        updatedAt: new Date()
+      }
+    ]);
+
     // Create RolePermissions junction table
     await queryInterface.createTable('RolePermissions', {
       id: {
@@ -65,6 +97,9 @@ module.exports = {
 
   down: async (queryInterface, Sequelize) => {
     await queryInterface.dropTable('RolePermissions');
+    await queryInterface.bulkDelete('Permissions', {
+      LibellePerm: ['Valider', 'Rechercher', 'Transférer', 'Rejeter']
+    });
     await queryInterface.dropTable('Permissions');
   },
 };
