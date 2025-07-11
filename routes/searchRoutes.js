@@ -15,7 +15,7 @@ async function searchRoutes(fastify, options) {
   });
 
   fastify.get('/search/:documentName/:searchTerm', {
-    preHandler: [authMiddleware.verifyToken, authMiddleware.requirePermission(['Rechercher'])]
+    preHandler: [authMiddleware.verifyToken]
   }, async (request, reply) => {
     try {
       const { documentName, searchTerm } = request.params;
