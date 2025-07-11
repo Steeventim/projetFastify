@@ -213,14 +213,19 @@ const userController = {
       const { Email, Password } = request.body;
       console.log('Login attempt for email:', Email);
   
-      // Find user with roles
-      
+      // Find user with roles and permissions
       const user = await User.findOne({
         where: { Email },
         include: [{
           model: Role,
           through: 'UserRoles',
-          attributes: ['idRole', 'name', 'description', 'isSystemRole']
+          attributes: ['idRole', 'name', 'description', 'isSystemRole'],
+          include: [{
+            model: Permission,
+            as: 'permissions',
+            attributes: ['idPermission', 'LibellePerm', 'description'],
+            through: { attributes: [] }
+          }]
         }],
         attributes: ['idUser', 'Email', 'Password', 'NomUser', 'PrenomUser', 'LastLogin']
       });
@@ -281,6 +286,18 @@ const userController = {
   
       console.log('Mapped user roles:', userRoles);
   
+      // Aggregate permissions from all roles
+      let permissions = [];
+      if (user.Roles) {
+        for (const role of user.Roles) {
+          if (role.permissions && Array.isArray(role.permissions)) {
+            permissions.push(...role.permissions.map(p => p.LibellePerm));
+          }
+        }
+        // Remove duplicates
+        permissions = [...new Set(permissions)];
+      }
+  
       const currentTime = new Date();
       await user.update({ LastLogin: currentTime });
   
@@ -289,9 +306,9 @@ const userController = {
           idUser: user.idUser,
           Email: user.Email,
           Roles: userRoles,
-          isSuperAdmin: userRoles.some(role => role.name === 'superadmin')
+          isSuperAdmin: userRoles.some(role => role.name === 'superadmin'),
+          permissions // <-- add permissions to token
         }),
-
         user: {
           id: user.idUser,
           email: user.Email,
@@ -299,8 +316,8 @@ const userController = {
           prenomUser: user.PrenomUser,
           isSuperAdmin: userRoles.some(role => role.name === 'superadmin'),
           lastLogin: currentTime,
-          roles: userRoles
-
+          roles: userRoles,
+          permissions // <-- add permissions to user object
         }
       };
   
