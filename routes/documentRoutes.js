@@ -125,7 +125,8 @@ module.exports = async function (fastify, opts) {
     },
     preHandler: [
       authMiddleware.verifyToken,
-      authMiddleware.requireRole(['admin', 'user'])
+      authMiddleware.requireRole(['admin', 'user']),
+      authMiddleware.requirePermission(['Valider'])
     ]
   }, documentController.approveDocument);
 
@@ -324,7 +325,7 @@ module.exports = async function (fastify, opts) {
         }
       }
     },
-    preHandler: [authMiddleware.verifyToken]
+    preHandler: [authMiddleware.verifyToken, authMiddleware.requirePermission(['Rejeter'])]
   }, documentController.rejectDocument);
 
   // Search and preview document (PDF/text preview for a search term)
@@ -338,6 +339,7 @@ module.exports = async function (fastify, opts) {
           searchTerm: { type: 'string' }
         }
       }
-    }
+    },
+    preHandler: [authMiddleware.verifyToken, authMiddleware.requirePermission(['Rechercher'])]
   }, documentController.searchAndPreviewDocument);
 };

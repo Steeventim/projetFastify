@@ -1,7 +1,10 @@
 const searchController = require('../controllers/searchController');
+const authMiddleware = require('../middleware/authMiddleware');
 
 async function searchRoutes(fastify, options) {
-  fastify.get('/search-without-name/:searchTerm', async (request, reply) => {
+  fastify.get('/search-without-name/:searchTerm', {
+    preHandler: [authMiddleware.verifyToken, authMiddleware.requirePermission(['Rechercher'])]
+  }, async (request, reply) => {
     try {
       await searchController.searchDocumentsWithoutName(request, reply);
       return reply;
@@ -11,7 +14,9 @@ async function searchRoutes(fastify, options) {
     }
   });
 
-  fastify.get('/search/:documentName/:searchTerm', async (request, reply) => {
+  fastify.get('/search/:documentName/:searchTerm', {
+    preHandler: [authMiddleware.verifyToken, authMiddleware.requirePermission(['Rechercher'])]
+  }, async (request, reply) => {
     try {
       const { documentName, searchTerm } = request.params;
       const { etapeName } = request.query;
@@ -26,6 +31,7 @@ async function searchRoutes(fastify, options) {
 
   // Add wrapper for proposition search with proper parameter validation
   fastify.get('/search-propositions/:searchTerm', {
+    preHandler: [authMiddleware.verifyToken, authMiddleware.requirePermission(['Rechercher'])],
     schema: {
       params: {
         type: 'object',

@@ -52,7 +52,8 @@ module.exports = async function (fastify, opts) {
     },
     preHandler: [
       authMiddleware.verifyToken,
-      authMiddleware.requireRole(['admin', 'user'])
+      authMiddleware.requireRole(['admin', 'user']),
+      authMiddleware.requirePermission(['Transférer'])
     ]
   }, etapeController.affectEtapeToDocument);
 

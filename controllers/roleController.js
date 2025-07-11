@@ -1,5 +1,6 @@
 const { Role, Etape, sequelize } = require('../models');
 const { v4: uuidv4 } = require('uuid'); // Import UUID for unique ID generation
+const RolePermissions = require('../models/RolePermissions')(sequelize);
 
 // Create Role
 const createRole = async (request, reply) => {
@@ -40,11 +41,32 @@ const createRole = async (request, reply) => {
                 defaults: { 
                     idRole: roleId, 
                     description, 
-                    isSystemRole, 
-                    permissions 
+                    isSystemRole
                 },
                 transaction: t
             });
+
+            // 3b. Associate permissions if provided
+            if (permissions && Array.isArray(permissions) && permissions.length > 0) {
+                // Accept both permission IDs and LibellePerm
+                const foundPermissions = await Promise.all(permissions.map(async (perm) => {
+                    if (perm.length === 36) { // UUID
+                        return await sequelize.models.Permission.findByPk(perm, { transaction: t });
+                    } else {
+                        return await sequelize.models.Permission.findOne({ where: { LibellePerm: perm }, transaction: t });
+                    }
+                }));
+                const validPermissions = foundPermissions.filter(Boolean);
+                // Instead of setPermissions, create RolePermissions with UUIDs
+                const rolePermissions = validPermissions.map(perm => ({
+                    id: uuidv4(),
+                    roleId: role.idRole,
+                    permissionId: perm.idPermission
+                }));
+                if (rolePermissions.length > 0) {
+                    await RolePermissions.bulkCreate(rolePermissions, { transaction: t });
+                }
+            }
 
             // 4. Update etape with the new role ID
             await etape.update({ 
@@ -54,14 +76,22 @@ const createRole = async (request, reply) => {
                 where: { idEtape: etape.idEtape }
             });
 
-            // 5. Get fresh role data with etape
+            // 5. Get fresh role data with etape and permissions
             const roleWithEtape = await Role.findOne({
                 where: { idRole: role.idRole },
-                include: [{
-                    model: Etape,
-                    as: 'etapes',
-                    attributes: ['idEtape', 'LibelleEtape']
-                }],
+                include: [
+                    {
+                        model: Etape,
+                        as: 'etapes',
+                        attributes: ['idEtape', 'LibelleEtape']
+                    },
+                    {
+                        model: sequelize.models.Permission,
+                        as: 'permissions',
+                        attributes: ['idPermission', 'LibellePerm', 'description'],
+                        through: { attributes: [] }
+                    }
+                ],
                 transaction: t
             });
 

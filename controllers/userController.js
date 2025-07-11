@@ -154,16 +154,44 @@ const userController = {
             }
           }
 
-          // Fetch the user with their roles
+          // Fetch the user with their roles and permissions
           const userWithRoles = await User.findByPk(newUser.idUser, {
             include: [{
               model: Role,
-              through: { attributes: [] }
+              through: { attributes: [] },
+              attributes: ['idRole', 'name', 'description', 'isSystemRole'],
+              include: [{
+                model: Permission,
+                as: 'permissions',
+                attributes: ['idPermission', 'LibellePerm', 'description'],
+                through: { attributes: [] }
+              }]
             }]
           });
 
+          // Aggregate permissions from all roles
+          let permissions = [];
+          if (userWithRoles.Roles) {
+            for (const role of userWithRoles.Roles) {
+              if (role.permissions && Array.isArray(role.permissions)) {
+                permissions.push(...role.permissions.map(p => p.LibellePerm));
+              }
+            }
+            permissions = [...new Set(permissions)];
+          }
+
           // Generate token
-          const token = authMiddleware.generateToken(userWithRoles);
+          const token = authMiddleware.generateToken({
+            idUser: userWithRoles.idUser,
+            Email: userWithRoles.Email,
+            Roles: userWithRoles.Roles.map(role => ({
+              id: role.idRole,
+              name: role.name,
+              description: role.description,
+              isSystemRole: role.isSystemRole
+            })),
+            permissions
+          });
 
           results.push({
             success: true,
@@ -171,7 +199,8 @@ const userController = {
               id: userWithRoles.idUser,
               email: userWithRoles.Email,
               nomUser: userWithRoles.NomUser,
-              roles: userWithRoles.Roles.map(role => role.name)
+              roles: userWithRoles.Roles.map(role => role.name),
+              permissions
             },
             token
           });
