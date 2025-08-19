@@ -1,5 +1,4 @@
-const { User, Role, UserRoles, TypeProjet, Etape, EtapeTypeProjet, sequelize } = require('../models');
-const bcrypt = require('bcrypt');
+const { User, Role, UserRoles, TypeProjet, Etape, EtapeTypeProjet, Permission, RolePermissions, sequelize } = require('../models');
 const { v4: uuidv4 } = require('uuid');
 
 /**
@@ -45,46 +44,110 @@ async function initDgiWorkflow(structureName = 'DGI') {
         name: 'secretariat_scanneur',
         description: 'Agent du secrétariat - Scanneur ou Agent de recherche',
         isSystemRole: false,
-        permissions: ['document:create', 'document:search', 'document:upload', 'document:index']
+        permissions: ['Créer', 'Rechercher', 'Uploader', 'Indexer']
       },
       {
         name: 'dgi_directeur',
         description: 'Directeur Général des Impôts (DGI)',
         isSystemRole: false,
-        permissions: ['document:read', 'document:validate', 'document:annotate', 'document:forward', 'document:sign']
+        permissions: ['Lire', 'Valider', 'Annoter', 'Transférer', 'Signer']
       },
       {
         name: 'directeur_recouvrement',
         description: 'Directeur du Recouvrement (DIR)',
         isSystemRole: false,
-        permissions: ['document:read', 'document:validate', 'document:annotate', 'document:forward', 'document:quote']
+        permissions: ['Lire', 'Valider', 'Annoter', 'Transférer', 'Quoter']
       },
       {
         name: 'sous_directeur',
         description: 'Sous-directeur',
         isSystemRole: false,
-        permissions: ['document:read', 'document:validate', 'document:annotate', 'document:forward', 'document:quote']
+        permissions: ['Lire', 'Valider', 'Annoter', 'Transférer', 'Quoter']
       },
       {
         name: 'cadre_recouvrement',
         description: 'Cadre responsable du recouvrement',
         isSystemRole: false,
-        permissions: ['document:read', 'document:process', 'document:annotate', 'document:validate', 'document:reject', 'document:elaborate_response']
+        permissions: ['Lire', 'Traiter', 'Annoter', 'Valider', 'Rejeter', 'ElaborerReponse']
       }
     ];
 
+    // First, create all permissions
+    console.log('🔑 Création des permissions...');
+    const allPermissions = new Set();
+    roles.forEach(role => role.permissions.forEach(perm => allPermissions.add(perm)));
+    
+    const createdPermissions = {};
+    for (const permName of allPermissions) {
+      try {
+        const [permission, permCreated] = await Permission.findOrCreate({
+          where: { LibellePerm: permName },
+          defaults: {
+            idPermission: uuidv4(),
+            LibellePerm: permName,
+            Description: `Permission pour ${permName}`
+          },
+          transaction
+        });
+        
+        // Ensure the permission was created or found
+        if (!permission) {
+          throw new Error(`Failed to create/find permission: ${permName}`);
+        }
+        
+        createdPermissions[permName] = permission;
+        console.log(`✅ Permission ${permName}: ${permCreated ? 'créée' : 'existe déjà'}`);
+      } catch (error) {
+        console.error(`❌ Erreur lors de la création de la permission ${permName}:`, error);
+        throw error;
+      }
+    }
+
+    // Then create roles and assign permissions
     const createdRoles = {};
     for (const roleData of roles) {
       const [role, created] = await Role.findOrCreate({
         where: { name: roleData.name },
         defaults: {
           idRole: uuidv4(),
-          ...roleData
+          name: roleData.name,
+          description: roleData.description,
+          isSystemRole: roleData.isSystemRole
         },
         transaction
       });
       createdRoles[roleData.name] = role;
       console.log(`✅ Rôle ${roleData.name}: ${created ? 'créé' : 'existe déjà'}`);
+
+      // Assign permissions to role
+      console.log(`🔄 Attribution des permissions au rôle ${roleData.name}...`);
+      for (const permName of roleData.permissions) {
+        try {
+          const permission = createdPermissions[permName];
+          if (!permission) {
+            throw new Error(`Permission not found: ${permName}`);
+          }
+
+          const [rolePermission, created] = await RolePermissions.findOrCreate({
+            where: {
+              roleId: role.idRole,
+              permissionId: permission.idPermission
+            },
+            defaults: {
+              id: uuidv4(),
+              roleId: role.idRole,
+              permissionId: permission.idPermission
+            },
+            transaction
+          });
+
+          console.log(`  ✅ Permission "${permName}": ${created ? 'attribuée' : 'déjà attribuée'}`);
+        } catch (error) {
+          console.error(`❌ Erreur lors de l'attribution de la permission ${permName}:`, error);
+          throw error;
+        }
+      }
+      console.log(`✅ Toutes les permissions ont été assignées au rôle ${roleData.name}`);
     }
 
     // 2. Création du TypeProjet "Recouvrement DGI"
@@ -248,22 +311,38 @@ async function initDgiWorkflow(structureName = 'DGI') {
           transaction
         });
 
-        if (userCreated || !await UserRoles.findOne({ 
+        // Ensure user role association exists
+        const [userRole, userRoleCreated] = await UserRoles.findOrCreate({
           where: { 
             userId: user.idUser, 
             roleId: createdRoles[userData.roleName].idRole 
           },
-          transaction 
-        })) {
-          await UserRoles.create({
+          defaults: {
             id: uuidv4(),
             userId: user.idUser,
             roleId: createdRoles[userData.roleName].idRole
-          }, { transaction });
-          console.log(`✅ Utilisateur ${userData.Email} (${userData.roleName}): ${userCreated ? 'créé' : 'rôle associé'}`);
+          },
+          transaction
+        });
+
+        // Get all permissions for this role
+        const rolePermissions = await RolePermissions.findAll({
+          where: { roleId: createdRoles[userData.roleName].idRole },
+          transaction
+        });
+
+        // Log user creation/update status
+        if (userCreated) {
+          console.log(`✅ Utilisateur ${userData.Email} créé avec ${rolePermissions.length} permissions`);
+        } else if (userRoleCreated) {
+          console.log(`✅ Rôle ${userData.roleName} associé à ${userData.Email} avec ${rolePermissions.length} permissions`);
         } else {
-          console.log(`ℹ️  Utilisateur ${userData.Email}: existe déjà avec le bon rôle`);
+          console.log(`ℹ️  Utilisateur ${userData.Email}: existe déjà avec le rôle ${userData.roleName} et ${rolePermissions.length} permissions`);
         }
+
+        // Log the permissions assigned
+        const permissionNames = roles.find(r => r.name === userData.roleName)?.permissions || [];
+        console.log(`   🔑 Permissions pour ${userData.Email}:${permissionNames.map(p => '\n      - ' + p).join('')}`);
       } catch (userError) {
         console.log(`⚠️  Erreur pour l'utilisateur ${userData.Email}: ${userError.message}`);
       }

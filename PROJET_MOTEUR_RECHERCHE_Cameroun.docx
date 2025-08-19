@@ -1,0 +1,189 @@
+# CAHIER DES CHARGES
+## Moteur de Recherche Intelligent pour les Archives Documentaires du Cameroun
+
+---
+
+## 1. PRÉSENTATION GÉNÉRALE DU PROJET
+
+### 1.1 Contexte et Enjeux
+
+Le Cameroun fait face à un défi majeur dans la gestion de ses archives et documents administratifs, souvent conservés sur support papier. Cette situation limite l’accès, la valorisation et la sécurisation de l’information. Le projet vise à digitaliser, indexer et automatiser la gestion documentaire grâce à une solution moderne, sécurisée et évolutive.
+
+### 1.2 Objet du Projet
+
+Développer une plateforme web complète permettant :
+- L’indexation automatique et la recherche intelligente de documents (Elasticsearch, FSCrawler)
+- La gestion documentaire centralisée (import, visualisation, historique)
+- La gestion des utilisateurs, rôles et permissions (RBAC)
+- La modélisation et l’exécution de workflows métiers personnalisés (BPM)
+- L’audit et la traçabilité des actions
+
+### 1.3 Maîtrise d’Ouvrage
+
+**Client :** Archives Nationales du Cameroun  
+**Type de projet :** Prototype fonctionnel, déploiement pilote  
+**Domaine :** Transformation digitale, gestion documentaire
+
+---
+
+## 2. ANALYSE DES BESOINS
+
+### 2.1 Problématiques Identifiées
+
+| Problématique | Impact Métier | Criticité |
+|---------------|---------------|-----------|
+| Accès lent à l’information | Recherches manuelles chronophages | **ÉLEVÉE** |
+| Risques de détérioration | Vulnérabilité environnementale des documents | **ÉLEVÉE** |
+| Manque de traçabilité | Processus administratifs peu fluides | **MOYENNE** |
+| Absence de dématérialisation | Perte de productivité des agents | **ÉLEVÉE** |
+
+### 2.2 Objectifs Fonctionnels (Alignés sur l’implémentation)
+
+- Recherche documentaire avancée (full-text, filtres, pertinence)
+- Import, indexation et visualisation de documents numériques
+- Gestion des utilisateurs, rôles et permissions (création, login, affectation)
+- Modélisation et exécution de workflows métiers (BPM) par structure
+- Traçabilité complète (audit, historique)
+- Interface web moderne, responsive et sécurisée
+
+### 2.3 Objectifs Non-Fonctionnels
+
+- Performance : temps de réponse < 2s, support de 10 000+ documents
+- Sécurité : authentification JWT, permissions fines, audit trail
+- Évolutivité : architecture modulaire, API REST, conteneurisation Docker
+
+---
+
+## 3. SPÉCIFICATIONS TECHNIQUES
+
+### 3.1 Architecture Système Réelle
+
+```
+Frontend (React + Vite)
+    │
+    ▼
+Backend (Node.js, Fastify, Sequelize)
+    │
+    ├── PostgreSQL (stockage, gestion utilisateurs, rôles, permissions, workflows, documents)
+    └── Elasticsearch (indexation/recherche)
+         ▲
+         │
+     FSCrawler (indexation fichiers)
+```
+
+### 3.2 Stack Technologique Réel
+
+| Couche | Technologie | Version |
+|--------|-------------|---------|
+| **Frontend** | React | 18.x |
+| | Vite | 4.x |
+| **Backend** | Node.js | 18.x |
+| | Fastify | 4.x |
+| | Sequelize | 6.x |
+| **Recherche** | Elasticsearch | 8.x |
+| | FSCrawler | 2.10 |
+| **Base de Données** | PostgreSQL | 15.x |
+| **Infra** | Docker, Nginx | 24.x, 1.24 |
+
+### 3.3 Modèle de Données (Extrait des modèles réels)
+
+- Utilisateurs (users) : id, username, email, password, roles, structure, etc.
+- Rôles (roles) : id, name, description
+- Permissions (permissions) : id, name, description
+- RolePermissions (role_permissions) : id, roleId, permissionId
+- Documents (documents) : id, title, file_path, mime_type, size, created_at, indexed_at, etc.
+- Workflows (workflows) : id, name, definition, status, created_by
+- Étapes (etapes), TypeProjet, Structure, etc.
+
+---
+
+## 4. SPÉCIFICATIONS FONCTIONNELLES (Alignées sur l’implémentation)
+
+### 4.1 Authentification et Gestion des Utilisateurs
+- Création d’utilisateurs avec affectation de rôles (via API)
+- Authentification sécurisée (JWT)
+- Gestion des permissions par rôle (RBAC)
+- Endpoints : /register, /login, /users, /roles, /permissions
+
+### 4.2 Recherche Documentaire
+- Recherche full-text (Elasticsearch) : mots-clés, filtres (type, date, structure)
+- Résultats paginés, triés par pertinence
+- Visualisation et téléchargement de documents
+- Endpoints : /search, /documents
+
+### 4.3 Gestion Documentaire
+- Import de documents (API, interface web)
+- Indexation automatique (FSCrawler)
+- Historique des modifications
+- Détection de doublons
+
+### 4.4 BPM / Workflows Documentaires
+- Modélisation de workflows par structure (TypeProjet, Étapes, etc.)
+- Affectation des étapes à des rôles/utilisateurs
+- Validation, annotation, transfert, signature
+- Traçabilité complète (audit)
+- Endpoints : /workflows, /etapes, /process, etc.
+
+### 4.5 Interface Utilisateur (Frontend)
+- Authentification, gestion de session
+- Recherche documentaire avancée
+- Visualisation des résultats et détails document
+- Gestion des workflows (affectation, validation, suivi)
+- Tableaux de bord personnalisés
+
+---
+
+## 5. CONTRAINTES ET EXIGENCES
+
+### 5.1 Techniques
+- API RESTful, documentation OpenAPI
+- Sécurité JWT, permissions middleware
+- Dockerisation, déploiement Nginx
+- Code commenté, README, scripts d’initialisation
+
+### 5.2 Sécurité
+- Authentification JWT, refresh tokens
+- Chiffrement TLS
+- Validation/sanitisation des entrées
+- Audit trail (actions sensibles)
+
+### 5.3 Réglementaires
+- Respect RGPD, traçabilité, conformité archivage
+
+---
+
+## 6. LIVRABLES ET PLANNING
+
+### 6.1 Livrables
+| Livrable | Type | Description |
+|----------|------|-------------|
+| Spécifications techniques | Doc | Modèle de données, API |
+| Code source | App | Backend, frontend, scripts |
+| Manuel utilisateur | Doc | Guide d’utilisation |
+| Scripts Docker | Infra | Déploiement |
+| Support formation | Doc | Slides, tutoriels |
+
+### 6.2 Planning
+| Phase | Dates | Jalons |
+|-------|-------|--------|
+| Analyse | 07/2025 | Cahier des charges |
+| Conception | 07/2025 | Modèle, API |
+| Développement | 07-08/2025 | MVP fonctionnel |
+| Tests | 08/2025 | Recette |
+| Déploiement | 08/2025 | Mise en prod |
+| Support | 09/2025+ | Maintenance |
+
+---
+
+## 7. ORGANISATION ET RESSOURCES
+
+### 7.1 Équipe Projet
+| Rôle | Responsabilités |
+|------|----------------|
+| Chef de projet | Pilotage, planning |
+| Architecte | Modélisation, choix techniques |
+| Développeur Full-Stack | Backend, frontend |
+| Spécialiste Elasticsearch | Indexation, recherche |
+| Testeur/QA | Validation |
+
+###

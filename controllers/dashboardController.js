@@ -83,7 +83,7 @@ class DashboardController {
         unreadPercentage: notificationStats.total > 0 ? Math.round((notificationStats.unread / notificationStats.total) * 100) : 0
       };
 
-      return reply.send({
+  return reply.send({
         success: true,
         timestamp: new Date().toISOString(),
         data: {
@@ -96,7 +96,7 @@ class DashboardController {
 
     } catch (error) {
       console.error('Error in getOverview:', error);
-      return reply.status(500).send({
+  return reply.status(500).send({
         success: false,
         message: 'Erreur lors de la récupération des statistiques générales',
         error: error.message
@@ -143,7 +143,7 @@ class DashboardController {
         `, { type: QueryTypes.SELECT })
       ]);
 
-      return reply.send({
+  return reply.send({
         success: true,
         timestamp: new Date().toISOString(),
         data: {
@@ -155,7 +155,7 @@ class DashboardController {
 
     } catch (error) {
       console.error('Error in getUserStats:', error);
-      return reply.status(500).send({
+  return reply.status(500).send({
         success: false,
         message: 'Erreur lors de la récupération des statistiques utilisateurs',
         error: error.message
@@ -214,7 +214,7 @@ class DashboardController {
         `, { type: QueryTypes.SELECT })
       ]);
 
-      return reply.send({
+  return reply.send({
         success: true,
         timestamp: new Date().toISOString(),
         data: {
@@ -227,7 +227,7 @@ class DashboardController {
 
     } catch (error) {
       console.error('Error in getDocumentStats:', error);
-      return reply.status(500).send({
+  return reply.status(500).send({
         success: false,
         message: 'Erreur lors de la récupération des statistiques documents',
         error: error.message
@@ -274,7 +274,7 @@ class DashboardController {
         `, { type: QueryTypes.SELECT })
       ]);
 
-      return reply.send({
+  return reply.send({
         success: true,
         timestamp: new Date().toISOString(),
         data: {
@@ -286,7 +286,7 @@ class DashboardController {
 
     } catch (error) {
       console.error('Error in getNotificationStats:', error);
-      return reply.status(500).send({
+  return reply.status(500).send({
         success: false,
         message: 'Erreur lors de la récupération des statistiques notifications',
         error: error.message
@@ -346,7 +346,7 @@ class DashboardController {
         `, { type: QueryTypes.SELECT })
       ]);
 
-      return reply.send({
+  return reply.send({
         success: true,
         timestamp: new Date().toISOString(),
         data: {
@@ -358,7 +358,7 @@ class DashboardController {
 
     } catch (error) {
       console.error('Error in getWorkflowStats:', error);
-      return reply.status(500).send({
+  return reply.status(500).send({
         success: false,
         message: 'Erreur lors de la récupération des statistiques de flux de travail',
         error: error.message
@@ -410,7 +410,7 @@ class DashboardController {
         })
       ]);
 
-      return reply.send({
+  return reply.send({
         success: true,
         timestamp: new Date().toISOString(),
         data: {
@@ -422,7 +422,7 @@ class DashboardController {
 
     } catch (error) {
       console.error('Error in getFileStats:', error);
-      return reply.status(500).send({
+  return reply.status(500).send({
         success: false,
         message: 'Erreur lors de la récupération des statistiques de fichiers',
         error: error.message
@@ -491,7 +491,7 @@ class DashboardController {
       const documentTrend = trends[0][0];
       const userActivityTrend = trends[1][0];
 
-      return reply.send({
+  return reply.send({
         success: true,
         timestamp: new Date().toISOString(),
         data: {
@@ -520,7 +520,7 @@ class DashboardController {
 
     } catch (error) {
       console.error('Error in getSystemMetrics:', error);
-      return reply.status(500).send({
+  return reply.status(500).send({
         success: false,
         message: 'Erreur lors de la récupération des métriques système',
         error: error.message
@@ -576,7 +576,7 @@ class DashboardController {
         database: Math.floor(Math.random() * 100)
       };
 
-      return reply.send({
+  return reply.send({
         success: true,
         timestamp: new Date().toISOString(),
         data: {
@@ -590,7 +590,7 @@ class DashboardController {
 
     } catch (error) {
       console.error('Error in getRealTimeData:', error);
-      return reply.status(500).send({
+  return reply.status(500).send({
         success: false,
         message: 'Erreur lors de la récupération des données temps réel',
         error: error.message
@@ -605,21 +605,22 @@ class DashboardController {
     try {
       // Créer des objets reply mock pour récupérer les données sans envoyer de réponse
       const mockReply = {
-        send: (data) => data.data,
+        send: (data) => (data && data.data ? data.data : data),
         status: () => mockReply,
         code: () => mockReply
       };
 
-      // Appeler toutes les méthodes en parallèle avec des objets mock
+      // Appeler toutes les méthodes en parallèle avec le bon contexte
+      const DashboardController = module.exports.constructor;
       const [overview, users, documents, notifications, workflow, files, metrics, realtime] = await Promise.all([
-        this.getOverview(request, mockReply).then(result => result.data),
-        this.getUserStats(request, mockReply).then(result => result.data),
-        this.getDocumentStats(request, mockReply).then(result => result.data),
-        this.getNotificationStats(request, mockReply).then(result => result.data),
-        this.getWorkflowStats(request, mockReply).then(result => result.data),
-        this.getFileStats(request, mockReply).then(result => result.data),
-        this.getSystemMetrics(request, mockReply).then(result => result.data),
-        this.getRealTimeData(request, mockReply).then(result => result.data)
+        DashboardController.prototype.getOverview.call(this, request, mockReply),
+        DashboardController.prototype.getUserStats.call(this, request, mockReply),
+        DashboardController.prototype.getDocumentStats.call(this, request, mockReply),
+        DashboardController.prototype.getNotificationStats.call(this, request, mockReply),
+        DashboardController.prototype.getWorkflowStats.call(this, request, mockReply),
+        DashboardController.prototype.getFileStats.call(this, request, mockReply),
+        DashboardController.prototype.getSystemMetrics.call(this, request, mockReply),
+        DashboardController.prototype.getRealTimeData.call(this, request, mockReply)
       ]);
 
       return reply.send({

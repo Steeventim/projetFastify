@@ -51,23 +51,26 @@ const authMiddleware = {
         });
       }
 
-      // Aggregate permissions from roles
+      // Aggregate permissions from roles (Sequelize alias is `permissions`)
       const permissionsSet = new Set();
-      user.Roles.forEach(role => {
-        // Defensive: role.Permissions may be undefined if no permissions assigned
-        if (Array.isArray(role.Permissions)) {
-          role.Permissions.forEach(perm => {
-            permissionsSet.add(perm.LibellePerm);
-          });
-        }
-      });
+      if (Array.isArray(user.Roles)) {
+        user.Roles.forEach(role => {
+          // support both alias shapes: role.permissions (defined) or legacy role.Permissions
+          const rolePerms = role.permissions || role.Permissions || [];
+          if (Array.isArray(rolePerms)) {
+            rolePerms.forEach(perm => {
+              if (perm && perm.LibellePerm) permissionsSet.add(perm.LibellePerm);
+            });
+          }
+        });
+      }
       const permissions = Array.from(permissionsSet);
 
       // Check if user is superadmin or admin
-      const isSuperAdmin = user.Roles?.some(role => role.name === 'superadmin');
-      const isAdmin = user.Roles?.some(role => role.name === 'admin');
+      const isSuperAdmin = (user.Roles || []).some(role => role.name === 'superadmin');
+      const isAdmin = (user.Roles || []).some(role => role.name === 'admin');
 
-      // Attach user info to request
+      // Normalize and attach user info to request (keep minimal role shape)
       request.user = {
         idUser: user.idUser, // Make sure we use the correct property name
         id: user.idUser,     // Add this for compatibility
@@ -76,7 +79,11 @@ const authMiddleware = {
         PrenomUser: user.PrenomUser,
         isSuperAdmin,
         isAdmin,
-        roles: user.Roles || [],
+        roles: (user.Roles || []).map(r => ({
+          name: r.name,
+          description: r.description,
+          isSystemRole: r.isSystemRole
+        })),
         permissions
       };
 
@@ -200,26 +207,72 @@ const authMiddleware = {
   },
 
   // Generate JWT Token
-  generateToken: (user) => {
-    const isSuperAdmin = user.Roles?.some(role => role.name === 'superadmin');
-    const isAdmin = user.Roles?.some(role => role.name === 'admin');
-    
+  generateToken: async (user) => {
+    const isSuperAdmin = (user.Roles || []).some(role => role.name === 'superadmin');
+    const isAdmin = (user.Roles || []).some(role => role.name === 'admin');
+
+    // Prefer explicit user.permissions if provided (controller passes it), otherwise aggregate from roles
+    let permissions = [];
+    if (Array.isArray(user.permissions) && user.permissions.length) {
+      permissions = [...new Set(user.permissions)];
+    } else if (Array.isArray(user.Roles) && user.Roles.length) {
+      // First try to collect from provided role objects
+      user.Roles.forEach(role => {
+        const rolePerms = role.permissions || role.Permissions || [];
+        if (Array.isArray(rolePerms) && rolePerms.length) {
+          permissions.push(...rolePerms.map(p => p.LibellePerm).filter(Boolean));
+        }
+      });
+
+      // If still empty, fetch roles from DB (by id or name) to load permissions
+      if (permissions.length === 0) {
+        const roleIds = user.Roles.map(r => r.id || r.idRole).filter(Boolean);
+        const roleNames = user.Roles.map(r => r.name).filter(Boolean);
+        let rolesFromDb = [];
+        try {
+          if (roleIds.length) {
+            rolesFromDb = await Role.findAll({
+              where: { idRole: roleIds },
+              include: [{ model: Permission, as: 'permissions', through: { attributes: [] }, attributes: ['LibellePerm'] }]
+            });
+          } else if (roleNames.length) {
+            rolesFromDb = await Role.findAll({
+              where: { name: roleNames },
+              include: [{ model: Permission, as: 'permissions', through: { attributes: [] }, attributes: ['LibellePerm'] }]
+            });
+          }
+
+          rolesFromDb.forEach(r => {
+            if (Array.isArray(r.permissions)) {
+              permissions.push(...r.permissions.map(p => p.LibellePerm).filter(Boolean));
+            }
+          });
+        } catch (err) {
+          // Log but don't fail token generation because of this
+          console.error('Error fetching role permissions for token generation:', err.message || err);
+        }
+      }
+
+      permissions = [...new Set(permissions)]; // Remove duplicates
+    }
+
     return jwt.sign(
-      { 
-        id: user.idUser,      // Make sure we use the correct property name
-        idUser: user.idUser,  // Add this for compatibility
+      {
+        id: user.idUser, // Make sure we use the correct property name
+        idUser: user.idUser, // Add this for compatibility
         email: user.Email,
-        roles: user.Roles?.map(role => ({
+        roles: (user.Roles || []).map(role => ({
           name: role.name,
           description: role.description,
           isSystemRole: role.isSystemRole
-        })) || [],
+        })),
+        permissions,
         isSuperAdmin,
         isAdmin
-      }, 
-      process.env.JWT_SECRET, 
-      { 
-        expiresIn: process.env.JWT_EXPIRATION || '1h' 
+      },
+      process.env.JWT_SECRET,
+      {
+        expiresIn: process.env.JWT_EXPIRATION || '1h'
       }
     );
   }

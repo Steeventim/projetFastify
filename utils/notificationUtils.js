@@ -14,7 +14,6 @@ const createNotification = async ({ userId, title, message, type }) => {
   if (!userId) {
     throw new Error("userId is required to create a notification");
   }
-
   try {
     const notification = await Notification.create({
       userId,
@@ -22,6 +21,20 @@ const createNotification = async ({ userId, title, message, type }) => {
       message,
       type,
     });
+    // Émission socket.io ciblée si possible
+    if (global._io && global._userSocketMap) {
+      const socketId = global._userSocketMap.get(userId);
+      if (socketId) {
+        global._io.to(socketId).emit("notification", {
+          userId,
+          title,
+          message,
+          type,
+          notificationId: notification.idNotification,
+          createdAt: notification.createdAt,
+        });
+      }
+    }
     return notification;
   } catch (error) {
     console.error("Error creating notification:", error);

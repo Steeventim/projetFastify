@@ -2,6 +2,33 @@ const searchController = require('../controllers/searchController');
 const authMiddleware = require('../middleware/authMiddleware');
 
 async function searchRoutes(fastify, options) {
+  // Enhanced search endpoint
+  fastify.get('/enhanced-search', {
+    preHandler: [authMiddleware.verifyToken, authMiddleware.requirePermission(['Rechercher'])],
+    schema: {
+      querystring: {
+        type: 'object',
+        required: ['q'],
+        properties: {
+          q: { type: 'string', minLength: 1 },
+          size: { type: 'integer', minimum: 1, default: 10 }
+        }
+      }
+    }
+  }, async (request, reply) => {
+    try {
+      await searchController.enhancedSearch(request, reply);
+      return reply;
+    } catch (error) {
+      fastify.log.error('Enhanced search error:', error);
+      reply.status(500).send({ 
+        success: false,
+        error: 'Internal Server Error',
+        message: error.message 
+      });
+    }
+  });
+
   fastify.get('/search-without-name/:searchTerm', {
     preHandler: [authMiddleware.verifyToken, authMiddleware.requirePermission(['Rechercher'])]
   }, async (request, reply) => {

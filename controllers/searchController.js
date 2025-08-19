@@ -25,6 +25,69 @@ const createOrUpdateDocument = async (document, documentName, documentUrl, trans
 };
 
 const searchController = {
+  enhancedSearch: async (request, reply) => {
+    try {
+      const { q } = request.query;
+      const size = parseInt(request.query.size) || 10;
+
+      if (!q || q.trim() === '') {
+        return reply.code(400).send({ 
+          success: false,
+          error: 'Search term is required',
+          message: 'Please provide a search term.'
+        });
+      }
+
+      const searchResponse = await searchService.enhancedSearch(q, size);
+      
+      if (!searchResponse || searchResponse.hits.total.value === 0) {
+        return reply.send({
+          success: true,
+          query: q,
+          total: 0,
+          hits: []
+        });
+      }
+
+      const hits = searchResponse.hits.hits.map(hit => ({
+        id: hit._id,
+        score: hit._score,
+        filename: hit._source?.file?.filename,
+        path: hit._source?.path?.virtual,
+        highlights: {
+          content: hit.highlight?.content || [],
+          filename: hit.highlight?.["file.filename"] || [],
+          path: hit.highlight?.["path.virtual"] || []
+        },
+        source: hit._source
+      }));
+
+      return reply.send({
+        success: true,
+        query: q,
+        total: searchResponse.hits.total.value,
+        hits: hits
+      });
+
+    } catch (error) {
+      console.error('Enhanced search error:', error);
+      
+      if (error.code === 'ECONNREFUSED') {
+        return reply.code(503).send({
+          success: false,
+          error: 'Service Unavailable',
+          message: 'Elasticsearch service is currently unavailable'
+        });
+      }
+
+      return reply.code(500).send({
+        success: false,
+        error: 'Search failed',
+        message: error.message || 'An error occurred during search'
+      });
+    }
+  },
+
   searchDocumentsWithoutName: async (request, reply) => {
     const { searchTerm } = request.params;
 

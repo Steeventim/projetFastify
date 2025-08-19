@@ -181,7 +181,7 @@ const userController = {
           }
 
           // Generate token
-          const token = authMiddleware.generateToken({
+            const token = await authMiddleware.generateToken({
             idUser: userWithRoles.idUser,
             Email: userWithRoles.Email,
             Roles: userWithRoles.Roles.map(role => ({
@@ -331,7 +331,7 @@ const userController = {
       await user.update({ LastLogin: currentTime });
   
       const responseData = {
-        token: authMiddleware.generateToken({
+    token: await authMiddleware.generateToken({
           idUser: user.idUser,
           Email: user.Email,
           Roles: userRoles,
@@ -537,7 +537,7 @@ const userController = {
       }));
 
       // Generate new token
-      const token = authMiddleware.generateToken({
+    const token = await authMiddleware.generateToken({
         idUser: user.idUser,
         Email: user.Email,
         Roles: userRoles,

@@ -130,8 +130,14 @@ fastify.register(dashboardRoutes);
 
 // Create a server instance for WebSocket
 const server = require("http").createServer(fastify.server);
-const { Server } = require("socket.io"); // Importer socket.io
-const io = new Server(server);
+const { Server } = require("socket.io");
+const jwt = require("jsonwebtoken");
+const io = new Server(server, { cors: { origin: '*', methods: ["GET", "POST"] } });
+
+// Mapping userId <-> socketId
+const userSocketMap = new Map();
+global._io = io; // Pour accès dans notificationUtils
+global._userSocketMap = userSocketMap;
 
 // Add error handler
 fastify.setErrorHandler((error, request, reply) => {
@@ -145,16 +151,37 @@ fastify.setErrorHandler((error, request, reply) => {
 io.on("connection", (socket) => {
   console.log("A user connected:", socket.id);
 
-  // Handle disconnection
+  // Authentifier le user via JWT envoyé lors de la connexion (query ou handshake)
+  const token = socket.handshake.auth?.token || socket.handshake.query?.token;
+  if (token) {
+    try {
+      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      const userId = decoded.id;
+      userSocketMap.set(userId, socket.id);
+      socket.userId = userId;
+      console.log(`Socket ${socket.id} mapped to user ${userId}`);
+    } catch (err) {
+      console.log("Invalid token on socket connection");
+    }
+  }
+
   socket.on("disconnect", () => {
-    console.log("User  disconnected:", socket.id);
+    if (socket.userId) {
+      userSocketMap.delete(socket.userId);
+      console.log(`User ${socket.userId} disconnected (socket ${socket.id})`);
+    } else {
+      console.log("User disconnected:", socket.id);
+    }
   });
 
-  // Example of handling a custom event
+  // Pour debug: recevoir une notification manuelle
   socket.on("sendNotification", (data) => {
-    console.log("Notification data received:", data);
-    // Emit the notification to all connected clients
-    io.emit("notification", data);
+    if (data && data.userId) {
+      const targetSocketId = userSocketMap.get(data.userId);
+      if (targetSocketId) {
+        io.to(targetSocketId).emit("notification", data);
+      }
+    }
   });
 });
 

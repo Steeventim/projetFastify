@@ -9,11 +9,17 @@ const LOCAL_PDF_DIRECTORY = process.env.PDF_DIRECTORY || "C:\\Users\\laure\\Desk
 
 // Initialize Elasticsearch client with retry and timeout settings
 const esClient = new Client({
-  node: process.env.ELASTICSEARCH_NODE || 'http://192.168.50.100:9200',
+  node: 'http://localhost:9200',
   maxRetries: 3,
   requestTimeout: 30000,
-  sniffOnStart: true,
-  sniffInterval: 30000,
+  sniffOnStart: false,
+  sniffOnConnectionFault: false,
+  sniffInterval: false,
+  ssl: {
+    rejectUnauthorized: false
+  },
+  nodes: ['http://localhost:9200'], // Explicitly set the only node to use
+  discovery: false,                 // Completely disable discovery
 });
 
 // Add ping function to check elasticsearch connection
@@ -43,6 +49,121 @@ function normalizeFilename(str) {
 }
 
 const searchService = {
+  async enhancedSearch(searchTerm) {
+    try {
+      // First check if elasticsearch is available
+      await ping();
+      
+      console.log('Running enhanced search for term:', searchTerm);
+      
+      const response = await esClient.search({
+        index: 'toptop_v2',  // Force using toptop_v2 index
+        size: 1000,          // Return up to 1000 results
+        body: {
+          query: {
+            bool: {
+              should: [
+                // Multi-field search with boosting
+                {
+                  multi_match: {
+                    query: searchTerm,
+                    fields: [
+                      "content^3",           // Content with boost
+                      "file.filename^2",     // Filename with moderate boost  
+                      "path.virtual^1.5"     // Path with slight boost
+                    ],
+                    type: "best_fields",
+                    boost: 8.0
+                  }
+                },
+                // Exact phrase match in content
+                {
+                  match_phrase: {
+                    content: {
+                      query: searchTerm,
+                      boost: 10.0
+                    }
+                  }
+                },
+                // Standard match in content
+                {
+                  match: {
+                    content: {
+                      query: searchTerm,
+                      boost: 5.0
+                    }
+                  }
+                },
+                // Fuzzy match for typos
+                {
+                  match: {
+                    content: {
+                      query: searchTerm,
+                      fuzziness: "AUTO",
+                      boost: 4.0
+                    }
+                  }
+                },
+                // Exact filename match
+                {
+                  match_phrase: {
+                    "file.filename": {
+                      query: searchTerm,
+                      boost: 7.0
+                    }
+                  }
+                },
+                // Partial filename match
+                {
+                  match: {
+                    "file.filename": {
+                      query: searchTerm,
+                      boost: 6.0
+                    }
+                  }
+                }
+              ],
+              minimum_should_match: 1
+            }
+          },
+          highlight: {
+            pre_tags: ['<mark>'],
+            post_tags: ['</mark>'],
+            max_analyzed_offset: 999999,
+            fields: {
+              content: {
+                fragment_size: 150,
+                number_of_fragments: 3
+              },
+              "file.filename": {
+                fragment_size: 100,
+                number_of_fragments: 1
+              },
+              "path.virtual": {
+                fragment_size: 100,
+                number_of_fragments: 1
+              }
+            }
+          }
+        }
+      });
+
+      console.log('Enhanced search response:', {
+        total: response.hits.total,
+        hits: response.hits.hits.length
+      });
+
+      return response;
+    } catch (error) {
+      console.error('Enhanced search error:', {
+        message: error.message,
+        name: error.name,
+        meta: error.meta
+      });
+      throw error;
+    }
+  },
+
   async searchWithHighlight(searchTerm) {
     try {
       // First check if elasticsearch is available
@@ -56,27 +177,8 @@ const searchService = {
           index: process.env.INDEX || 'test2',
           body: {
             query: {
-              bool: {
-                must: [
-                  {
-                    match_phrase: {
-                      content: {
-                        query: searchTerm,
-                        slop: 2  // Allow for slight word variations
-                      }
-                    }
-                  }
-                ],
-                should: [
-                  {
-                    match: {
-                      content: {
-                        query: searchTerm,
-                        minimum_should_match: "75%"
-                      }
-                    }
-                  }
-                ]
+              match: {
+                content: searchTerm
               }
             },
             highlight: {
@@ -89,8 +191,7 @@ const searchService = {
                   post_tags: ['</strong>']
                 }
               }
-            },
-            min_score: 0.5  // Minimum relevance score
+            }
           }
         });
 
@@ -108,30 +209,10 @@ const searchService = {
           index: process.env.INDEX || 'test2',
           body: {
             query: {
-              bool: {
-                must: [
-                  {
-                    match_phrase: {
-                      content: {
-                        query: searchTerm,
-                        slop: 2  // Allow for slight word variations
-                      }
-                    }
-                  }
-                ],
-                should: [
-                  {
-                    match: {
-                      content: {
-                        query: searchTerm,
-                        minimum_should_match: "75%"
-                      }
-                    }
-                  }
-                ]
+              match: {
+                content: searchTerm
               }
-            },
-            min_score: 0.5  // Minimum relevance score
+            }
           }
         });
 
@@ -157,17 +238,6 @@ const searchService = {
       
       throw error;
     }
-  },
-
-  // Generate a mock search response when Elasticsearch is unavailable
-  generateMockSearchResponse(searchTerm) {
-    console.log('Generating mock search response for term:', searchTerm);
-    return {
-      hits: {
-        total: { value: 0 },
-        hits: []
-      }
-    };
   },
   
   async searchDocumentWithHighlight(documentName, searchTerm) {
