@@ -174,7 +174,7 @@ const searchService = {
       // Try with highlighting first
       try {
         const response = await esClient.search({
-          index: process.env.INDEX || 'test2',
+          index: process.env.INDEX || 'toptop_v2',
           body: {
             query: {
               match: {
@@ -206,7 +206,7 @@ const searchService = {
         console.log('Highlighting failed, searching without highlights:', highlightError.message);
         
         const response = await esClient.search({
-          index: process.env.INDEX || 'test2',
+          index: process.env.INDEX || 'toptop_v2',
           body: {
             query: {
               match: {
@@ -278,7 +278,7 @@ const searchService = {
       for (const variant of variants) {
         try {
           searchResponse = await esClient.search({
-            index: process.env.INDEX || 'test2',
+            index: process.env.INDEX || 'toptop_v2',
             body: {
               query: {
                 multi_match: {
@@ -305,7 +305,7 @@ const searchService = {
         
         // Get all documents and check for similar names
         const allDocsResponse = await esClient.search({
-          index: process.env.INDEX || 'test2',
+          index: process.env.INDEX || 'toptop_v2',
           body: {
             size: 500, // Increase to get more potential matches
             query: {
@@ -368,7 +368,7 @@ const searchService = {
             
             // Search using the matched name
             searchResponse = await esClient.search({
-              index: process.env.INDEX || 'test2',
+              index: process.env.INDEX || 'toptop_v2',
               body: {
                 query: {
                   match_phrase: {
@@ -918,26 +918,98 @@ const searchService = {
       const existingPdfBytes = fs.readFileSync(localFilePath);
       // Utiliser le wrapper CommonJS pour éviter les problèmes d'import ESM
       const { extractPdfText } = require('../utils/pdfTextExtractorWrapper.js');
-      const { text, numpages } = await extractPdfText(existingPdfBytes);
-      
-      const totalPages = numpages;
-      const fullText = text;
+
+      let totalPages;
+      let fullText;
+      let pagesFromExtractor = null;
+      try {
+        const res = await extractPdfText(existingPdfBytes);
+        // extractor now returns { text, numpages, pages }
+        totalPages = res.numpages;
+        fullText = res.text;
+        pagesFromExtractor = Array.isArray(res.pages) ? res.pages : null;
+      } catch (extractErr) {
+        // PDF parsing failed (corrupted PDF or unsupported structure). Fall back to ES highlights/snippets.
+        console.error('PDF text extraction wrapper failed, falling back to Elasticsearch snippets:', extractErr && extractErr.message ? extractErr.message : extractErr);
+
+        // Try to fetch highlights from Elasticsearch for this document/searchTerm
+        try {
+          const esResp = await this.searchWithHighlight(searchTerm);
+          const normalizedSearchTermLocal = (searchTerm || '').toLowerCase().trim();
+          const hits = (esResp && esResp.hits && esResp.hits.hits) ? esResp.hits.hits : [];
+
+          const previewPages = [];
+          // Build preview pages from ES highlights or source snippets
+          for (let i = 0; i < hits.length; i++) {
+            const hit = hits[i];
+            const highlightFragments = (hit.highlight && (hit.highlight.content || hit.highlight._source?.content)) ? (hit.highlight.content || hit.highlight._source?.content) : null;
+            const sourceContent = hit._source && (hit._source.content || hit._source.text || hit._source.file?.content) ? (hit._source.content || hit._source.text || hit._source.file?.content) : '';
+            const content = (highlightFragments && highlightFragments.length)
+              ? highlightFragments.join(' ... ')
+              : (sourceContent ? sourceContent.substring(0, 1000) + (sourceContent.length > 1000 ? '...' : '') : 'Extrait non disponible');
+
+            previewPages.push({
+              pageNumber: i + 1,
+              content: content,
+              hasMatches: !!(highlightFragments && highlightFragments.length),
+              matchCount: highlightFragments ? highlightFragments.length : 0,
+              pageType: 'match',
+              matchHighlights: this.highlightMatches(content, normalizedSearchTermLocal)
+            });
+            // limit to a reasonable number
+            if (previewPages.length >= 10) break;
+          }
+
+          const totalMatches = previewPages.reduce((s, p) => s + (p.matchCount || 0), 0);
+
+          const result = {
+            documentInfo: {
+              filename: decodedDocumentName,
+              totalPages: 'N/A',
+              physicalPath: localFilePath || 'N/A',
+              previewType: 'Elasticsearch Content (fallback)'
+            },
+            searchInfo: {
+              searchTerm: searchTerm,
+              normalizedTerm: normalizedSearchTermLocal,
+              matchCount: totalMatches,
+              pagesWithMatches: previewPages.length,
+              timestamp: new Date().toISOString()
+            },
+            previewPages: previewPages,
+            summary: `Fallback preview from Elasticsearch: ${previewPages.length} fragment(s) returned, ${totalMatches} highlights.`
+          };
+
+          console.log('=== generateDocumentPreview END (ES fallback) ===');
+          return result;
+        } catch (esFallbackErr) {
+          console.error('Elasticsearch fallback also failed:', esFallbackErr && esFallbackErr.message ? esFallbackErr.message : esFallbackErr);
+          throw extractErr; // rethrow original extraction error if fallback fails
+        }
+      }
       
       console.log(`PDF loaded: ${totalPages} pages, ${fullText.length} characters`);
       
-      // Méthode améliorée pour diviser le texte par pages
+      // Prefer exact per-page texts from extractor when available
       let pageTexts = [];
-      
-      // Essayer d'abord la division par form feed
-      if (fullText.includes('\f')) {
-        pageTexts = fullText.split('\f');
+      if (pagesFromExtractor && pagesFromExtractor.length === totalPages) {
+        pageTexts = pagesFromExtractor.map(p => (p || '').toString());
       } else {
-        // Sinon, diviser par estimation basée sur la longueur
-        const avgPageLength = Math.ceil(fullText.length / totalPages);
-        for (let i = 0; i < totalPages; i++) {
-          const start = i * avgPageLength;
-          const end = Math.min((i + 1) * avgPageLength, fullText.length);
-          pageTexts.push(fullText.substring(start, end));
+        // Méthode améliorée pour diviser le texte par pages
+        // Essayer d'abord la division par form feed
+        if (fullText && fullText.includes('\f')) {
+          pageTexts = fullText.split('\f');
+        } else if (fullText) {
+          // Sinon, diviser par estimation basée sur la longueur
+          const avgPageLength = Math.ceil(fullText.length / totalPages);
+          for (let i = 0; i < totalPages; i++) {
+            const start = i * avgPageLength;
+            const end = Math.min((i + 1) * avgPageLength, fullText.length);
+            pageTexts.push(fullText.substring(start, end));
+          }
+        } else {
+          // No text available
+          pageTexts = Array.from({ length: totalPages }, () => '');
         }
       }
       
@@ -953,29 +1025,59 @@ const searchService = {
       
       // Normaliser le terme de recherche
       const normalizedSearchTerm = searchTerm.toLowerCase().trim();
-      
-      // Trouver les pages contenant le terme de recherche (recherche flexible)
+      const escapeRegExp = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const searchWords = normalizedSearchTerm.split(/\s+/).filter(Boolean);
+
+      // Trouver les pages contenant le terme de recherche
+      // - Single word: keep existing flexible variants behaviour
+      // - Phrase (multiple words): prefer exact phrase matches, else pages containing most words
       const pagesWithMatches = [];
       pageTexts.forEach((pageText, index) => {
         const normalizedPageText = pageText.toLowerCase();
-        // Recherche flexible : chercher le terme avec des variantes
-        const searchVariants = [
-          normalizedSearchTerm,
-          normalizedSearchTerm.replace(/s$/, ''), // enlever le 's' final
-          normalizedSearchTerm + 's', // ajouter un 's'
-        ];
-        
+
         let matchCount = 0;
         let hasMatch = false;
-        
-        searchVariants.forEach(variant => {
-          const matches = (normalizedPageText.match(new RegExp(variant, 'gi')) || []).length;
-          if (matches > 0) {
+
+        if (searchWords.length > 1) {
+          // Phrase logic: exact phrase matches
+          const phraseRegex = new RegExp(escapeRegExp(normalizedSearchTerm), 'gi');
+          const exactMatches = (normalizedPageText.match(phraseRegex) || []).length;
+          if (exactMatches > 0) {
             hasMatch = true;
-            matchCount += matches;
+            // weight exact phrase matches higher
+            matchCount += exactMatches * 10;
           }
-        });
-        
+
+          // Count how many distinct words from the phrase are present
+          let matchedWords = 0;
+          for (const w of searchWords) {
+            if (w.length === 0) continue;
+            if (normalizedPageText.indexOf(w) !== -1) matchedWords++;
+          }
+
+          // If no exact phrase, accept page if it contains most words (threshold 70%) or all words
+          const threshold = Math.ceil(searchWords.length * 0.7);
+          if (!hasMatch && (matchedWords >= threshold || matchedWords === searchWords.length)) {
+            hasMatch = true;
+            matchCount += matchedWords;
+          }
+        } else {
+          // Single-word behaviour (preserve existing flexible variants)
+          const searchVariants = [
+            normalizedSearchTerm,
+            normalizedSearchTerm.replace(/s$/, ''), // enlever le 's' final
+            normalizedSearchTerm + 's', // ajouter un 's'
+          ];
+          searchVariants.forEach(variant => {
+            if (!variant) return;
+            const matches = (normalizedPageText.match(new RegExp(escapeRegExp(variant), 'gi')) || []).length;
+            if (matches > 0) {
+              hasMatch = true;
+              matchCount += matches;
+            }
+          });
+        }
+
         if (hasMatch) {
           pagesWithMatches.push({
             pageNumber: index + 1,
@@ -1008,12 +1110,20 @@ const searchService = {
         let content = page.content;
         if (content.length > 1000) {
           // Trouver un extrait autour des correspondances
-          const firstMatchIndex = content.toLowerCase().indexOf(normalizedSearchTerm);
+          let firstMatchIndex = content.toLowerCase().indexOf(normalizedSearchTerm);
+          if (firstMatchIndex === -1 && searchWords.length > 1) {
+            // fallback: find first matched word position
+            for (const w of searchWords) {
+              const pos = content.toLowerCase().indexOf(w);
+              if (pos !== -1) { firstMatchIndex = pos; break; }
+            }
+          }
+          if (firstMatchIndex === -1) firstMatchIndex = 0;
           const start = Math.max(0, firstMatchIndex - 200);
           const end = Math.min(content.length, firstMatchIndex + 800);
           content = (start > 0 ? '...' : '') + content.substring(start, end) + (end < content.length ? '...' : '');
         }
-        
+
         previewPages.push({
           pageNumber: page.pageNumber,
           content: content,
@@ -1025,9 +1135,10 @@ const searchService = {
       });
       
       // 3. Dernière page (si elle n'est pas déjà dans les résultats et différente de la première)
-      if (totalPages > 1 && pageTexts[totalPages - 1] && 
-          !pagesWithMatches.some(p => p.pageNumber === totalPages) &&
-          totalPages !== 1) {
+      if (totalPages > 1 &&
+        pageTexts[totalPages - 1] &&
+        !pagesWithMatches.some(p => p.pageNumber === totalPages) &&
+        totalPages !== 1) {
         previewPages.push({
           pageNumber: totalPages,
           content: pageTexts[totalPages - 1].trim().substring(0, 800) + (pageTexts[totalPages - 1].length > 800 ? '...' : ''),
@@ -1037,9 +1148,23 @@ const searchService = {
         });
       }
       
-      // Trier par numéro de page
-      previewPages.sort((a, b) => a.pageNumber - b.pageNumber);
-      
+      // Trier, dédupliquer et sanitiser les numéros de page
+      const seenPages = new Set();
+      const sanitized = [];
+      previewPages.forEach(p => {
+        // Ensure pageNumber is an integer and within bounds
+        let pn = Math.round(Number(p.pageNumber) || 0);
+        if (!pn || pn < 1) pn = 1;
+        if (totalPages && pn > totalPages) pn = totalPages;
+        if (!seenPages.has(pn)) {
+          seenPages.add(pn);
+          sanitized.push({ ...p, pageNumber: pn });
+        }
+      });
+      sanitized.sort((a, b) => a.pageNumber - b.pageNumber);
+      // Replace previewPages with sanitized array
+      const finalPreviewPages = sanitized.map(p => ({ ...p, pageNumber: Math.round(Number(p.pageNumber) || 0) }));
+
       const totalMatches = pagesWithMatches.reduce((sum, page) => sum + page.matchCount, 0);
       
       const result = {
@@ -1056,10 +1181,10 @@ const searchService = {
           pagesWithMatches: pagesWithMatches.length,
           timestamp: new Date().toISOString()
         },
-        previewPages: previewPages,
+        previewPages: finalPreviewPages,
         summary: `Document physique analysé: ${totalPages} pages, ${totalMatches} occurrence(s) trouvée(s) sur ${pagesWithMatches.length} page(s).`
       };
-      
+
       console.log('=== generateDocumentPreview END ===');
       return result;
       
@@ -1092,10 +1217,10 @@ const searchService = {
       let originalPdfDoc = null;
       let originalPages = [];
       const physicalPath = previewData.documentInfo?.physicalPath;
-      if (physicalPath && 
-          physicalPath !== 'Document non trouvé localement' &&
-          physicalPath !== 'N/A' &&
-          fs.existsSync(physicalPath)) {
+      if (physicalPath &&
+        physicalPath !== 'Document non trouvé localement' &&
+        physicalPath !== 'N/A' &&
+        fs.existsSync(physicalPath)) {
         try {
           console.log('Loading original PDF from:', physicalPath);
           const originalPdfBytes = fs.readFileSync(physicalPath);
@@ -1129,11 +1254,14 @@ const searchService = {
           let pageAdded = false;
           
           // Essayer de copier la page originale d'abord
-          if (originalPdfDoc && originalPages[page.pageNumber - 1]) {
+          if (originalPdfDoc) {
+            // Clamp page index to available pages
+            const targetIndex = Math.min(Math.max(0, Math.round(page.pageNumber) - 1), originalPages.length - 1);
             try {
-              const [copiedPage] = await newPdfDoc.copyPages(originalPdfDoc, [page.pageNumber - 1]);
+              const [copiedPage] = await newPdfDoc.copyPages(originalPdfDoc, [targetIndex]);
+              const actualPageNumber = targetIndex + 1;
               newPdfDoc.addPage(copiedPage);
-              console.log(`Copied original page ${page.pageNumber}`);
+              console.log(`Copied original page ${actualPageNumber}`);
               pageAdded = true;
             } catch (copyError) {
               console.log(`Failed to copy page ${page.pageNumber}:`, copyError.message);

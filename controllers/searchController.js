@@ -404,13 +404,27 @@ const searchController = {
 
       // Configurer la réponse pour afficher le PDF dans le navigateur
       const filename = `${documentName}_recherche_${searchTerm}_${new Date().toISOString().split('T')[0]}.pdf`;
+      // Use RFC5987 encoding for non-ASCII filenames to avoid invalid header characters
+      const encodedFilename = encodeURIComponent(filename);
       reply.type('application/pdf');
-      reply.header('Content-Disposition', `inline; filename="${filename}"`);
-      reply.header('Content-Length', pdfBuffer.length);
+      // Use filename* with UTF-8''<pct-encoded> which is ASCII-safe
+      reply.header('Content-Disposition', `inline; filename*=UTF-8''${encodedFilename}`);
+      // Ensure Content-Length header value is a string
+      reply.header('Content-Length', String(pdfBuffer.length));
 
       console.log(`=== highlightDocument END - PDF generated (${pdfBuffer.length} bytes) ===`);
-      return reply.send(pdfBuffer);    } catch (error) {
-      await t.rollback();
+      return reply.send(pdfBuffer);
+    } catch (error) {
+      // Only rollback if the transaction has not already been finished (commit/rollback)
+      try {
+        if (t && !t.finished) {
+          await t.rollback();
+        } else {
+          console.warn('Transaction already finished, skipping rollback');
+        }
+      } catch (rbErr) {
+        console.warn('Transaction rollback error (ignored):', rbErr && rbErr.message ? rbErr.message : rbErr);
+      }
       console.error('Error highlighting document:', {
         error: error.message,
         documentName: request.params?.documentName || 'unknown',

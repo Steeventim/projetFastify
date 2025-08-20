@@ -28,11 +28,14 @@ export async function extractPdfText(pdfInput) {
   const loadingTask = pdfjsLib.getDocument({ data });
   const pdf = await loadingTask.promise;
   let text = '';
+  const pages = [];
   for (let i = 1; i <= pdf.numPages; i++) {
     const page = await pdf.getPage(i);
     const content = await page.getTextContent();
-    text += content.items.map(item => item.str).join(' ') + '\n\n';
+    const pageText = content.items.map(item => item.str).join(' ');
+    pages.push(pageText);
+    text += pageText + '\n\n';
   }
   await pdf.destroy();
-  return { text, numpages: pdf.numPages };
+  return { text, numpages: pdf.numPages, pages };
 }

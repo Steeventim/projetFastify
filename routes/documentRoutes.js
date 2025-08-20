@@ -17,9 +17,10 @@ module.exports = async function (fastify, opts) {
         type: 'object',
         required: ['documentId', 'userId', 'etapeId'],
         properties: {
-          documentId: { type: 'string', format: 'uuid' },
-          userId: { type: 'string', format: 'uuid' },
-          etapeId: { type: 'string', format: 'uuid' },
+          // Accept string or object to be tolerant of multipart/form-data parsing
+          documentId: { type: ['string', 'object'] },
+          userId: { type: ['string', 'object'] },
+          etapeId: { type: ['string', 'object'] },
           'comments.*.content': { type: 'string' },
           'files.*': {
             type: 'object',
@@ -49,6 +50,23 @@ module.exports = async function (fastify, opts) {
       }
     }
   }, documentController.viewDocument);
+
+  // Create document (test helper)
+  fastify.post('/documents', {
+    preHandler: [authMiddleware.verifyToken, authMiddleware.requireRole(['admin','user'])],
+    schema: {
+      body: {
+        type: 'object',
+        properties: {
+          title: { type: 'string' },
+          type: { type: 'string' },
+          userId: { type: 'string', format: 'uuid' },
+          etapeId: { type: 'string', format: 'uuid' },
+          content: { type: 'string' }
+        }
+      }
+    }
+  }, documentController.createDocument);
 
   // Assign etape to document
   fastify.post('/assign-etape', {

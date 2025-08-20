@@ -11,7 +11,7 @@ async function testPathReal() {
 
     // Faire une recherche simple
     const searchResponse = await esClient.search({
-      index: 'projet_search',
+  index: 'toptop_v2',
       body: {
         query: {
           match: {

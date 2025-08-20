@@ -128,11 +128,10 @@ fastify.register(initializationRoutes);
 fastify.register(notificationRoutes);
 fastify.register(dashboardRoutes);
 
-// Create a server instance for WebSocket
-const server = require("http").createServer(fastify.server);
 const { Server } = require("socket.io");
 const jwt = require("jsonwebtoken");
-const io = new Server(server, { cors: { origin: '*', methods: ["GET", "POST"] } });
+// Attach socket.io directly to Fastify's internal HTTP server so upgrades work correctly
+const io = new Server(fastify.server, { cors: { origin: '*', methods: ["GET", "POST"] } });
 
 // Mapping userId <-> socketId
 const userSocketMap = new Map();

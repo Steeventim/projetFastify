@@ -44,7 +44,7 @@ async function initDgiWorkflow(structureName = 'DGI') {
         name: 'secretariat_scanneur',
         description: 'Agent du secrétariat - Scanneur ou Agent de recherche',
         isSystemRole: false,
-        permissions: ['Créer', 'Rechercher', 'Uploader', 'Indexer']
+  permissions: ['Créer', 'Rechercher', 'Uploader', 'Indexer', 'Transférer']
       },
       {
         name: 'dgi_directeur',
@@ -68,7 +68,7 @@ async function initDgiWorkflow(structureName = 'DGI') {
         name: 'cadre_recouvrement',
         description: 'Cadre responsable du recouvrement',
         isSystemRole: false,
-        permissions: ['Lire', 'Traiter', 'Annoter', 'Valider', 'Rejeter', 'ElaborerReponse']
+  permissions: ['Lire', 'Traiter', 'Annoter', 'Valider', 'Rejeter', 'ElaborerReponse', 'Transférer']
       }
     ];
 

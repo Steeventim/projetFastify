@@ -1,6 +1,123 @@
-const { User, Role, Document, Etape, TypeProjet, Structure, File, Notification, Commentaire, UserRoles } = require('../models');
-const { QueryTypes, literal } = require('sequelize');
+const { User, Role, Document, Etape, TypeProjet, Structure, File, Notification, Commentaire } = require('../models');
+const { QueryTypes } = require('sequelize');
 const db = require('../models');
+
+// Helper: recursively convert numeric-looking strings to numbers for consistent JSON types
+function normalizeNumericStrings(obj, _seen = new WeakSet()) {
+  // Use a WeakSet to avoid infinite recursion on circular structures
+  const seen = _seen instanceof WeakSet ? _seen : new WeakSet();
+
+  if (obj === null || obj === undefined) return obj;
+
+  // Primitives
+  if (typeof obj !== 'object') {
+    if (typeof obj === 'string') {
+      if (/^\d+$/.test(obj)) return parseInt(obj, 10);
+      if (/^\d+\.\d+$/.test(obj)) return parseFloat(obj);
+    }
+    return obj;
+  }
+
+  // Avoid cycles
+  if (seen.has(obj)) return undefined;
+  seen.add(obj);
+
+  if (Array.isArray(obj)) {
+    return obj.map((v) => normalizeNumericStrings(v, seen)).filter((v) => v !== undefined);
+  }
+
+  const res = {};
+  for (const [k, v] of Object.entries(obj)) {
+    try {
+      const n = normalizeNumericStrings(v, seen);
+      if (n !== undefined) res[k] = n;
+    } catch (err) {
+      // If a property throws (rare), preserve original value to avoid breaking the payload
+      res[k] = v;
+    }
+  }
+  return res;
+}
+
+// Convert model instances / complex objects to pure plain JS objects while
+// stripping circular references. This ensures Fastify can JSON.stringify the
+// response without hitting "Converting circular structure to JSON".
+function toPlainObject(obj, _seen = new WeakSet()) {
+  const seen = _seen instanceof WeakSet ? _seen : new WeakSet();
+  if (obj === null || obj === undefined) return obj;
+  if (typeof obj !== 'object') return obj;
+
+  // Avoid cycles
+  if (seen.has(obj)) return null;
+  seen.add(obj);
+
+  // If the object has a toJSON (Sequelize etc), prefer its output and recurse into it
+  try {
+    if (typeof obj.toJSON === 'function') {
+      const json = obj.toJSON();
+      // If toJSON returns a primitive, return it directly
+      if (json === null || typeof json !== 'object') return json;
+      return toPlainObject(json, seen);
+    }
+  } catch (err) {
+    // ignore and continue
+  }
+
+  if (Array.isArray(obj)) {
+    return obj.map((v) => toPlainObject(v, seen));
+  }
+
+  const out = {};
+  for (const [k, v] of Object.entries(obj)) {
+    // skip functions and symbols
+    if (typeof v === 'function') continue;
+    try {
+      const plain = toPlainObject(v, seen);
+      // Only assign if not undefined (but keep null)
+      if (plain !== undefined) out[k] = plain;
+    } catch (err) {
+      // On unexpected errors, skip the property to keep payload serializable
+    }
+  }
+  return out;
+}
+
+// Remove any remaining circular references by performing a traversal and
+// omitting repeated objects. Returns a new plain object/array with cycles removed.
+function removeCircular(value) {
+  const seen = new WeakSet();
+  function derez(val) {
+    if (val === null || typeof val !== 'object') return val;
+    if (seen.has(val)) return undefined; // omit circular reference
+    seen.add(val);
+    if (Array.isArray(val)) return val.map(derez).filter((v) => v !== undefined);
+    const out = {};
+    for (const [k, v] of Object.entries(val)) {
+      try {
+        const d = derez(v);
+        if (d !== undefined) out[k] = d;
+      } catch (err) {
+        // skip problematic property
+      }
+    }
+    return out;
+  }
+  return derez(value);
+}
+
+// Safe serializer that drops circular references using a replacer and
+// returns a JSON string. This avoids TypeError from JSON.stringify on cycles.
+function safeSerialize(obj) {
+  const seen = new WeakSet();
+  return JSON.stringify(obj, function (key, value) {
+    if (typeof value === 'object' && value !== null) {
+      if (seen.has(value)) return undefined;
+      seen.add(value);
+    }
+    if (typeof value === 'function') return undefined;
+    return value;
+  });
+}
 
 /**
  * Contrôleur Dashboard Admin
@@ -13,28 +130,28 @@ class DashboardController {
    */
   async getOverview(request, reply) {
     try {
-      const [userStats, documentStats, systemStats, notificationStats] = await Promise.all([
-        // Statistiques utilisateurs
-        User.count({
-          attributes: [
-            [literal('COUNT(*)'), 'total'],
-            [literal('SUM(CASE WHEN "IsActive" = true THEN 1 ELSE 0 END)'), 'active'],
-            [literal('SUM(CASE WHEN "IsActive" = false THEN 1 ELSE 0 END)'), 'inactive']
-          ],
-          raw: true
-        }),
+      // Build aggregates via raw SQL queries because Model.count(...) returns a number
+      // and cannot be used with custom aggregate attributes in the way previously written.
+      const [userStatsRows, documentStatsRows, systemStats, notificationStatsRows] = await Promise.all([
+        // Statistiques utilisateurs (total, active, inactive)
+        db.sequelize.query(`
+          SELECT
+            COUNT(*)::int AS total,
+            SUM(CASE WHEN "IsActive" = true THEN 1 ELSE 0 END)::int AS active,
+            SUM(CASE WHEN "IsActive" = false THEN 1 ELSE 0 END)::int AS inactive
+          FROM "Users"
+        `, { type: QueryTypes.SELECT }),
 
-        // Statistiques documents
-        Document.count({
-          attributes: [
-            [literal('COUNT(*)'), 'total'],
-            [literal('SUM(CASE WHEN status = \'pending\' THEN 1 ELSE 0 END)'), 'pending'],
-            [literal('SUM(CASE WHEN status != \'pending\' THEN 1 ELSE 0 END)'), 'processed']
-          ],
-          raw: true
-        }),
+        // Statistiques documents (total, pending, processed)
+        db.sequelize.query(`
+          SELECT
+            COUNT(*)::int AS total,
+            SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END)::int AS pending,
+            SUM(CASE WHEN status != 'pending' THEN 1 ELSE 0 END)::int AS processed
+          FROM "Documents"
+        `, { type: QueryTypes.SELECT }),
 
-        // Statistiques système
+        // Statistiques système (counts per table)
         Promise.all([
           Etape.count(),
           Role.count(),
@@ -43,29 +160,32 @@ class DashboardController {
           File.count()
         ]),
 
-        // Statistiques notifications
-        Notification.count({
-          attributes: [
-            [literal('COUNT(*)'), 'total'],
-            [literal('SUM(CASE WHEN "isRead" = false THEN 1 ELSE 0 END)'), 'unread'],
-            [literal('SUM(CASE WHEN "isRead" = true THEN 1 ELSE 0 END)'), 'read']
-          ],
-          raw: true
-        })
+        // Statistiques notifications (total, unread, read)
+        db.sequelize.query(`
+          SELECT
+            COUNT(*)::int AS total,
+            SUM(CASE WHEN "isRead" = false THEN 1 ELSE 0 END)::int AS unread,
+            SUM(CASE WHEN "isRead" = true THEN 1 ELSE 0 END)::int AS read
+          FROM "Notifications"
+        `, { type: QueryTypes.SELECT })
       ]);
 
+      const userStats = (userStatsRows && userStatsRows[0]) ? userStatsRows[0] : { total: 0, active: 0, inactive: 0 };
+      const documentStats = (documentStatsRows && documentStatsRows[0]) ? documentStatsRows[0] : { total: 0, pending: 0, processed: 0 };
+      const notificationStats = (notificationStatsRows && notificationStatsRows[0]) ? notificationStatsRows[0] : { total: 0, unread: 0, read: 0 };
+
       const users = {
-        total: parseInt(userStats.total) || 0,
-        active: parseInt(userStats.active) || 0,
-        inactive: parseInt(userStats.inactive) || 0,
-        activePercentage: userStats.total > 0 ? Math.round((userStats.active / userStats.total) * 100) : 0
+        total: parseInt(userStats.total, 10) || 0,
+        active: parseInt(userStats.active, 10) || 0,
+        inactive: parseInt(userStats.inactive, 10) || 0,
+        activePercentage: (userStats.total && userStats.total > 0) ? Math.round((userStats.active / userStats.total) * 100) : 0
       };
 
       const documents = {
-        total: parseInt(documentStats.total) || 0,
-        pending: parseInt(documentStats.pending) || 0,
-        processed: parseInt(documentStats.processed) || 0,
-        pendingPercentage: documentStats.total > 0 ? Math.round((documentStats.pending / documentStats.total) * 100) : 0
+        total: parseInt(documentStats.total, 10) || 0,
+        pending: parseInt(documentStats.pending, 10) || 0,
+        processed: parseInt(documentStats.processed, 10) || 0,
+        pendingPercentage: (documentStats.total && documentStats.total > 0) ? Math.round((documentStats.pending / documentStats.total) * 100) : 0
       };
 
       const system = {
@@ -77,10 +197,10 @@ class DashboardController {
       };
 
       const notifications = {
-        total: parseInt(notificationStats.total) || 0,
-        unread: parseInt(notificationStats.unread) || 0,
-        read: parseInt(notificationStats.read) || 0,
-        unreadPercentage: notificationStats.total > 0 ? Math.round((notificationStats.unread / notificationStats.total) * 100) : 0
+        total: parseInt(notificationStats.total, 10) || 0,
+        unread: parseInt(notificationStats.unread, 10) || 0,
+        read: parseInt(notificationStats.read, 10) || 0,
+        unreadPercentage: (notificationStats.total && notificationStats.total > 0) ? Math.round((notificationStats.unread / notificationStats.total) * 100) : 0
       };
 
   return reply.send({
@@ -491,7 +611,7 @@ class DashboardController {
       const documentTrend = trends[0][0];
       const userActivityTrend = trends[1][0];
 
-  return reply.send({
+      return reply.send({
         success: true,
         timestamp: new Date().toISOString(),
         data: {
@@ -505,13 +625,13 @@ class DashboardController {
             documents: {
               current: parseInt(documentTrend.current) || 0,
               previous: parseInt(documentTrend.previous) || 0,
-              trend: documentTrend.previous > 0 ? 
+              trend: documentTrend.previous > 0 ?
                 Math.round(((documentTrend.current - documentTrend.previous) / documentTrend.previous) * 100) : 0
             },
             userActivity: {
               current: parseInt(userActivityTrend.current) || 0,
               previous: parseInt(userActivityTrend.previous) || 0,
-              trend: userActivityTrend.previous > 0 ? 
+              trend: userActivityTrend.previous > 0 ?
                 Math.round(((userActivityTrend.current - userActivityTrend.previous) / userActivityTrend.previous) * 100) : 0
             }
           }
@@ -605,7 +725,14 @@ class DashboardController {
     try {
       // Créer des objets reply mock pour récupérer les données sans envoyer de réponse
       const mockReply = {
-        send: (data) => (data && data.data ? data.data : data),
+        send: (data) => {
+          const payload = data && data.data ? data.data : data;
+          try {
+            return toPlainObject(payload);
+          } catch (err) {
+            return payload;
+          }
+        },
         status: () => mockReply,
         code: () => mockReply
       };
@@ -623,19 +750,41 @@ class DashboardController {
         DashboardController.prototype.getRealTimeData.call(this, request, mockReply)
       ]);
 
+      // Sanitize each sub-response by serializing with safeSerialize (drops circular refs)
+      const parts = [overview, users, documents, notifications, workflow, files, metrics, realtime];
+      const parsedParts = parts.map((p) => {
+        try {
+          return JSON.parse(safeSerialize(p));
+        } catch (err) {
+          // Fallback: try the toPlainObject converter
+          try {
+            return toPlainObject(p);
+          } catch (err2) {
+            return null;
+          }
+        }
+      });
+
+      const assembledSafe = {
+        overview: parsedParts[0],
+        users: parsedParts[1],
+        documents: parsedParts[2],
+        notifications: parsedParts[3],
+        workflow: parsedParts[4],
+        files: parsedParts[5],
+        metrics: parsedParts[6],
+        realtime: parsedParts[7]
+      };
+
+      // Normalize numeric strings to numbers for consistent typing in the API
+      const normalized = normalizeNumericStrings(assembledSafe) || {};
+      const safe = removeCircular(normalized);
+
+      // Return a plain object — Fastify should be able to stringify it safely
       return reply.send({
         success: true,
         timestamp: new Date().toISOString(),
-        data: {
-          overview,
-          users,
-          documents,
-          notifications,
-          workflow,
-          files,
-          metrics,
-          realtime
-        }
+        data: safe
       });
 
     } catch (error) {

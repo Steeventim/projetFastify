@@ -33,13 +33,28 @@ const verifyDocumentStatus = async (document) => {
 const documentController = {
 
   forwardDocument: async (request, reply) => {
-    const {
-      documentId,
-      userId,
-      comments,
-      etapeId,
-      UserDestinatorName: providedDestinator,
-    } = request.body;
+    // Normalize possible multipart/form-data shapes into strings
+    const rawBody = request.body || {};
+    const normalize = (v) => {
+      if (v == null) return v;
+      if (typeof v === 'string') return v;
+      if (Array.isArray(v)) return String(v[0]);
+      if (typeof v === 'object') {
+        // try common shapes
+        if (Object.prototype.hasOwnProperty.call(v, 'value')) return String(v.value);
+        const vals = Object.values(v);
+        if (vals.length > 0) return String(vals[0]);
+        return String(v);
+      }
+      return String(v);
+    };
+
+    const documentId = normalize(rawBody.documentId);
+    const userId = normalize(rawBody.userId);
+    const effectiveUserId = request.user?.idUser || userId;
+    const comments = rawBody.comments;
+    const etapeId = normalize(rawBody.etapeId);
+    const providedDestinator = normalize(rawBody.UserDestinatorName || rawBody.UserDestinator || rawBody.destinator);
 
     const files = request.files || {};
 
@@ -63,9 +78,19 @@ const documentController = {
         });
       }
 
-      const roleCheck = await documentController.checkUserEtapeRole(userId, etapeId);
+  const roleCheck = await documentController.checkUserEtapeRole(effectiveUserId, etapeId);
       if (!roleCheck.success || !roleCheck.hasPermission) {
-        console.log("Role check details:", roleCheck.details);
+        try {
+          const sender = await User.findByPk(userId, { include: [{ model: Role, through: UserRoles }] });
+          console.log('Role check failed - debug info:', {
+            userId,
+            senderRoles: sender ? sender.Roles.map(r => ({ id: r.idRole, name: r.name })) : null,
+            etapeRoleId: etape.roleId,
+            roleCheck
+          });
+        } catch (logErr) {
+          console.log('Error logging roleCheck debug info:', logErr);
+        }
         return reply.status(403).send({
           error: "Forbidden",
           message: "User does not have the required role for this etape",
@@ -73,17 +98,24 @@ const documentController = {
         });
       }
 
+      // Find the next etape allowing gaps in sequence numbers
       const nextEtape = await Etape.findOne({
         where: {
-          sequenceNumber: etape.sequenceNumber + 1,
+          sequenceNumber: { [Sequelize.Op.gt]: etape.sequenceNumber },
         },
+        order: [["sequenceNumber", "ASC"]],
       });
 
       let destinatorUser;
       if (providedDestinator) {
-        destinatorUser = await User.findOne({
-          where: { NomUser: providedDestinator },
-        });
+        // Allow providedDestinator to be Email, UUID (idUser) or NomUser
+        if (typeof providedDestinator === 'string' && providedDestinator.includes('@')) {
+          destinatorUser = await User.findOne({ where: { Email: providedDestinator } });
+        } else if (typeof providedDestinator === 'string' && /^[0-9a-fA-F-]{36}$/.test(providedDestinator)) {
+          destinatorUser = await User.findByPk(providedDestinator);
+        } else {
+          destinatorUser = await User.findOne({ where: { NomUser: providedDestinator } });
+        }
       } else if (nextEtape) {
         const usersWithRole = await User.findAll({
           include: [
@@ -127,7 +159,7 @@ const documentController = {
         });
       }
 
-      const user = await User.findByPk(userId);
+      const user = await User.findByPk(effectiveUserId);
       if (!user) {
         return reply.status(404).send({
           error: "Not Found",
@@ -195,6 +227,7 @@ const documentController = {
             fileSize: savedFile.fileSize,
             thumbnailPath: savedFile.thumbnailPath
           }, { transaction: t });
+          savedFiles.push(fileRecord);
         } catch (fileError) {
           console.error('Error processing file:', fileError);
           throw fileError; // Re-throw to trigger transaction rollback
@@ -246,6 +279,26 @@ const documentController = {
 
       await t.commit();
 
+      // Emit real-time socket event to destinator if connected
+      try {
+        if (global._io && global._userSocketMap && destinatorUser && destinatorUser.idUser) {
+          const targetSocketId = global._userSocketMap.get(destinatorUser.idUser);
+          console.log('Attempting emit - destinatorUserId:', destinatorUser.idUser, 'mappedSocketId:', targetSocketId);
+          if (targetSocketId) {
+            global._io.to(targetSocketId).emit('document_transferred', {
+              document: updatedDocument,
+              fromUser: { id: user.idUser, name: user.NomUser },
+              transferTimestamp,
+            });
+            console.log('Emitted document_transferred to socket', targetSocketId);
+          } else {
+            console.log('Destinator user is not connected (no socket mapping)');
+          }
+        }
+      } catch (emitErr) {
+        console.error('Error emitting document_transferred event:', emitErr);
+      }
+
       return reply.status(200).send({
         success: true,
         destinatorUser: {
@@ -260,7 +313,7 @@ const documentController = {
         transferStatus: "sent",
         transferTimestamp,
         comments: updatedDocument.commentaires || [],
-        files: updatedDocument.files || [],
+        files: savedFiles.length ? savedFiles : (updatedDocument.files || []),
       });
     } catch (error) {
       await t.rollback();
@@ -277,14 +330,26 @@ const documentController = {
   },
 
   forwardToNextEtape: async (request, reply) => {
-    const {
-      documentId,
-      userId,
-      comments,
-      etapeId,
-      UserDestinatorName,
-      nextEtapeName,
-    } = request.body;
+    const rawBody = request.body || {};
+    const normalize = (v) => {
+      if (v == null) return v;
+      if (typeof v === 'string') return v;
+      if (Array.isArray(v)) return String(v[0]);
+      if (typeof v === 'object') {
+        if (Object.prototype.hasOwnProperty.call(v, 'value')) return String(v.value);
+        const vals = Object.values(v);
+        if (vals.length > 0) return String(vals[0]);
+        return String(v);
+      }
+      return String(v);
+    };
+
+    const documentId = normalize(rawBody.documentId);
+    const userId = normalize(rawBody.userId);
+    const comments = rawBody.comments;
+    const etapeId = normalize(rawBody.etapeId);
+    const UserDestinatorName = normalize(rawBody.UserDestinatorName || rawBody.UserDestinator || rawBody.destinator);
+    const nextEtapeName = normalize(rawBody.nextEtapeName);
     const files = request.files || {};
 
     const t = await sequelize.transaction();
@@ -415,6 +480,21 @@ const documentController = {
           message: `Le document ${documentId} a été transféré à l'étape ${nextEtapeName}.`,
           type: "document_approved",
         });
+        // emit real-time event to nextEtape.userId if connected
+        try {
+          if (global._io && global._userSocketMap) {
+            const socketId = global._userSocketMap.get(nextEtape.userId);
+            if (socketId) {
+              global._io.to(socketId).emit('document_transferred', {
+                document: updatedDocument,
+                nextEtape,
+                transferBy: userId,
+              });
+            }
+          }
+        } catch (emitErr) {
+          console.error('Error emitting document_transferred for next etape:', emitErr);
+        }
       } else {
         console.warn(
           `No userId found for next etape: ${nextEtapeName} (etapeId: ${nextEtape.idEtape})`
@@ -756,6 +836,53 @@ const documentController = {
     }
   },
 
+  // Minimal helper to create a document for test purposes
+  createDocument: async (request, reply) => {
+    try {
+      const { title, content } = request.body || {};
+      // Prefer explicit userId in body, otherwise use authenticated user
+      const userId = request.body?.userId || request.user?.idUser;
+      const etapeId = request.body?.etapeId || null;
+
+      if (!userId) {
+        return reply.status(400).send({ success: false, message: 'userId is required (either in body or via authenticated token)' });
+      }
+
+      const newDoc = await Document.create({
+        idDocument: uuidv4(),
+        Title: title || `Untitled ${Date.now()}`,
+        etapeId: etapeId,
+        status: 'pending',
+        transferStatus: 'pending',
+        url: null,
+      });
+
+      // Optionally create a basic comment to indicate creator
+      if (content) {
+        await Commentaire.create({
+          idComment: uuidv4(),
+          documentId: newDoc.idDocument,
+          userId,
+          Contenu: content,
+          createdAt: new Date(),
+        });
+      }
+
+      const created = await Document.findByPk(newDoc.idDocument, {
+        include: [
+          { model: Commentaire, as: 'commentaires' },
+          { model: File, as: 'files' },
+          { model: Etape, as: 'etape' },
+        ],
+      });
+
+      return reply.status(201).send({ success: true, data: created });
+    } catch (error) {
+      console.error('Error creating document (test helper):', error);
+      return reply.status(500).send({ success: false, error: error.message });
+    }
+  },
+
   async checkUserEtapeRole(userId, etapeId) {
     try {
       const user = await User.findByPk(userId, {
@@ -996,7 +1123,7 @@ const documentController = {
   },
   approveDocument: async (request, reply) => {
     const { documentId, userId, etapeId, comments } = request.body;
-    const files = request.files || {};
+    const _files = request.files || {};
 
     const t = await sequelize.transaction();
 
@@ -1161,7 +1288,7 @@ const documentController = {
             } : null,
           })) || [],
           files: latestDocument.files || [],
-          etape: latestDocument.etape || {}
+          etape: latestDocument.etape || null
         }
       });
     } catch (error) {
@@ -1424,6 +1551,7 @@ const documentController = {
             thumbnailPath: savedFile.thumbnailPath
           }, { transaction: t });
           savedFiles.push(fileRecord);
+          savedFiles.push(fileRecord);
         } catch (fileError) {
           console.error('Error processing file during rejection:', fileError);
           throw fileError;
@@ -1645,9 +1773,12 @@ const documentController = {
       }
       const preview = await searchService.generateDocumentPreview(documentName, searchTerm);
       const pdfBuffer = await searchService.generateStructuredPDF(preview, documentName, searchTerm);
-      reply.header('Content-Type', 'application/pdf');
-      reply.header('Content-Disposition', `inline; filename="${documentName}-search.pdf"`);
-      return reply.send(pdfBuffer);
+  reply.header('Content-Type', 'application/pdf');
+  const filename = `${documentName}-search.pdf`;
+  const encodedFilename = encodeURIComponent(filename);
+  reply.header('Content-Disposition', `inline; filename*=UTF-8''${encodedFilename}`);
+  reply.header('Content-Length', String(pdfBuffer.length));
+  return reply.send(pdfBuffer);
     } catch (error) {
       return reply.status(404).send({
         error: 'Not Found',

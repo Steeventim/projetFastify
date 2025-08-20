@@ -24,8 +24,9 @@ const isUUID = (id) => {
 
 const etapeController = {
   affectEtapeToDocument: async (request, reply) => {
-    console.log('Incoming request body:', request.body);
-    console.log('Incoming files:', request.files);
+  console.log('POST /etapes/affect received - user:', request.user?.idUser || 'anonymous');
+  console.log('Incoming request body keys:', Object.keys(request.body || {}));
+  console.log('Incoming files keys:', request.files ? Object.keys(request.files) : []);
 
     const t = await sequelize.transaction();    try {
       const { documentId, userId, comments: rawComments, UserDestinatorName, nextEtapeName, files: bodyFiles = [] } = request.body;
@@ -327,32 +328,63 @@ getEtapesByTypeProjet: async (request, reply) => {
       }
 
       // Find the next etape based on sequence number and type projet
-      const nextEtape = await Etape.findOne({
-        include: [
-          {
-            model: TypeProjet,
-            as: "typeProjets",
-            where: {
-              idType: {
-                [Sequelize.Op.in]: etape.typeProjets.map((tp) => tp.idType), // Fix: Use Sequelize.Op instead of sequelize.Op
+      // Use '>' and order ASC so gaps in sequence numbers don't prevent finding the next step
+      let nextEtape = null;
+      const typeProjetIds = (etape.typeProjets || []).map((tp) => tp.idType);
+      if (typeProjetIds.length > 0) {
+        // First try: find next etape that shares a TypeProjet with the current etape
+        nextEtape = await Etape.findOne({
+          include: [
+            {
+              model: TypeProjet,
+              as: "typeProjets",
+              where: {
+                idType: {
+                  [Sequelize.Op.in]: typeProjetIds,
+                },
               },
+              attributes: [],
+              through: { attributes: [] },
             },
+          ],
+          where: {
+            sequenceNumber: { [Sequelize.Op.gt]: etape.sequenceNumber },
           },
-        ],
-        where: {
-          sequenceNumber: etape.sequenceNumber + 1,
-        },
-        attributes: ["idEtape", "LibelleEtape"],
-      });
+          order: [["sequenceNumber", "ASC"]],
+          attributes: ["idEtape", "LibelleEtape", "Description", "Validation", "sequenceNumber", "createdAt", "updatedAt"],
+        });
+
+        // If not found, fall back to a sequence-only search. This covers cases
+        // where etapes exist but haven't been linked to the same TypeProjet.
+        if (!nextEtape) {
+          console.warn(`No typeProjet-scoped next etape found for etape ${etape.idEtape}; falling back to sequence-only lookup.`);
+          nextEtape = await Etape.findOne({
+            where: {
+              sequenceNumber: { [Sequelize.Op.gt]: etape.sequenceNumber },
+            },
+            order: [["sequenceNumber", "ASC"]],
+            attributes: ["idEtape", "LibelleEtape", "Description", "Validation", "sequenceNumber", "createdAt", "updatedAt"],
+          });
+        }
+      } else {
+        // Fallback: no associated typeProjet, find next by sequence only
+        nextEtape = await Etape.findOne({
+          where: {
+            sequenceNumber: { [Sequelize.Op.gt]: etape.sequenceNumber },
+          },
+          order: [["sequenceNumber", "ASC"]],
+          attributes: ["idEtape", "LibelleEtape", "Description", "Validation", "sequenceNumber", "createdAt", "updatedAt"],
+        });
+      }
 
       return reply.send({
         success: true,
         data: etape,
         nextEtape: nextEtape
           ? {
-              idEtape: nextEtape.idEtape,
-              LibelleEtape: nextEtape.LibelleEtape,
-            }
+            idEtape: nextEtape.idEtape,
+            LibelleEtape: nextEtape.LibelleEtape,
+          }
           : null,
       });
     } catch (error) {
@@ -399,25 +431,36 @@ getEtapesByTypeProjet: async (request, reply) => {
         currentEtape.typeProjets.map((tp) => tp.idType)
       );
 
-      // 2. Find next etape
-      const nextEtape = await Etape.findOne({
-        where: {
-          sequenceNumber: currentEtape.sequenceNumber + 1,
-        },
-        include: [
-          {
-            model: TypeProjet,
-            as: "typeProjets",
-            where: {
-              idType: {
-                [Sequelize.Op.in]: currentEtape.typeProjets.map(
-                  (tp) => tp.idType
-                ),
+      // 2. Find next etape - allow gaps by finding the next higher sequenceNumber
+      let nextEtape = null;
+      const currentTypeIds = (currentEtape.typeProjets || []).map((tp) => tp.idType);
+      if (currentTypeIds.length > 0) {
+        nextEtape = await Etape.findOne({
+          where: {
+            sequenceNumber: { [Sequelize.Op.gt]: currentEtape.sequenceNumber },
+          },
+          include: [
+            {
+              model: TypeProjet,
+              as: "typeProjets",
+              where: {
+                idType: {
+                  [Sequelize.Op.in]: currentTypeIds,
+                },
               },
             },
+          ],
+          order: [["sequenceNumber", "ASC"]],
+        });
+      } else {
+        // Fallback when typeProjets are not set: use sequence only
+        nextEtape = await Etape.findOne({
+          where: {
+            sequenceNumber: { [Sequelize.Op.gt]: currentEtape.sequenceNumber },
           },
-        ],
-      });
+          order: [["sequenceNumber", "ASC"]],
+        });
+      }
 
       if (!nextEtape) {
         console.log(
@@ -466,6 +509,10 @@ getEtapesByTypeProjet: async (request, reply) => {
         ],
         order: [["NomUser", "ASC"]],
       });
+
+      if (usersWithRole.length === 0) {
+        console.warn(`Next etape ${nextEtape.idEtape} (roleId=${nextEtape.roleId}) has no users assigned.`);
+      }
 
       return reply.send({
         success: true,
