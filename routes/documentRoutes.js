@@ -358,6 +358,6 @@ module.exports = async function (fastify, opts) {
         }
       }
     },
-    preHandler: [authMiddleware.verifyToken, authMiddleware.requirePermission(['Rechercher'])]
+    preHandler: [ authMiddleware.requirePermission(['Rechercher'])]
   }, documentController.searchAndPreviewDocument);
 };

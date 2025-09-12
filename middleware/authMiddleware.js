@@ -5,8 +5,39 @@ const authMiddleware = {
   // Verify JWT Token
   verifyToken: async (request, reply) => {
     try {
-      const token = request.headers.authorization?.replace('Bearer ', '');
-      
+      // Flexible token extraction: Authorization header, Fastify-parsed cookies,
+      // raw Cookie header, x-access-token header, or ?token query param.
+      let token = null;
+
+      const authHeader = request.headers && (request.headers.authorization || request.headers.Authorization);
+      if (authHeader) {
+        token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : authHeader;
+      }
+
+      // Fastify cookie parser (if used)
+      if (!token && request.cookies && request.cookies.token) {
+        token = request.cookies.token;
+      }
+
+      // x-access-token header
+      if (!token && (request.headers['x-access-token'] || request.headers['X-Access-Token'])) {
+        token = request.headers['x-access-token'] || request.headers['X-Access-Token'];
+      }
+
+      // query param
+      if (!token && request.query && request.query.token) {
+        token = request.query.token;
+      }
+
+      // Last resort: parse raw Cookie header if cookies not parsed
+      if (!token && request.headers && request.headers.cookie) {
+        const cookieHeader = request.headers.cookie;
+        const match = cookieHeader.split(';').map(c => c.trim()).find(c => c.startsWith('token='));
+        if (match) {
+          token = decodeURIComponent(match.split('=')[1]);
+        }
+      }
+
       if (!token) {
         return reply.status(401).send({ 
           statusCode: 401, 
@@ -71,7 +102,7 @@ const authMiddleware = {
       const isAdmin = (user.Roles || []).some(role => role.name === 'admin');
 
       // Normalize and attach user info to request (keep minimal role shape)
-      request.user = {
+  request.user = {
         idUser: user.idUser, // Make sure we use the correct property name
         id: user.idUser,     // Add this for compatibility
         Email: user.Email,
@@ -86,26 +117,27 @@ const authMiddleware = {
         })),
         permissions
       };
+  // Debug logging
+  console.log('Token decoded:', decoded);
+  console.log('User ID from token:', decoded.id);
+  console.log('User ID in request:', request.user.idUser);
+  console.log('User permissions:', permissions);
 
-      // Debug logging
-      console.log('Token decoded:', decoded);
-      console.log('User ID from token:', decoded.id);
-      console.log('User ID in request:', request.user.idUser);
-      console.log('User permissions:', permissions);
-
+  // Successful verification - allow caller to proceed
+  return;
     } catch (error) {
       console.error('Token verification error:', error);
       if (error.name === 'TokenExpiredError') {
-        return reply.status(401).send({ 
-          statusCode: 401, 
-          error: 'Unauthorized', 
-          message: 'Token expired' 
+        return reply.status(401).send({
+          statusCode: 401,
+          error: 'Unauthorized',
+          message: 'Token expired'
         });
       }
-      return reply.status(403).send({ 
-        statusCode: 403, 
-        error: 'Forbidden', 
-        message: 'Invalid token' 
+      return reply.status(403).send({
+        statusCode: 403,
+        error: 'Forbidden',
+        message: 'Invalid token'
       });
     }
   },
