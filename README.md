@@ -18,6 +18,7 @@ Application Fastify complète pour la gestion de documents avec workflow d'étap
 ## 🛠️ Installation
 
 ### Prérequis
+
 - Node.js (v16 ou supérieur)
 - PostgreSQL (v13 ou supérieur)
 - Elasticsearch (optionnel, pour la recherche)
@@ -25,51 +26,57 @@ Application Fastify complète pour la gestion de documents avec workflow d'étap
 ### Configuration
 
 1. **Cloner le projet**
+
 ```bash
 git clone <votre-repo>
 cd myproject
 ```
 
 2. **Installer les dépendances**
+
 ```bash
 npm install
 ```
 
 3. **Configuration de l'environnement**
+
 ```bash
 cp .env.example .env
 # Modifier .env avec vos paramètres
 ```
 
 4. **Configuration de la base de données**
+
 ```bash
 # Créer la base de données
 createdb cenadi
 
 # Exécuter les migrations
-npm run migrate
+node scripts/runMigrations.js
 ```
 
 ## 🚀 Usage
 
 ### Développement
+
 ```bash
 npm run dev
 ```
 
 ### Production
+
 ```bash
 npm start
 ```
 
 ### Migrations
+
 ```bash
-npm run migrate          # Exécuter toutes les migrations
-npm run migrate:undo     # Annuler la dernière migration
-npm run migrate:fresh    # Reset complet de la DB
+node scripts/runMigrations.js             # Exécuter toutes les migrations
 ```
 
 ### Tests
+
 ```bash
 npm test
 ```
@@ -77,6 +84,7 @@ npm test
 ## 📡 API Endpoints
 
 ### 🔐 Authentication
+
 - `POST /users/login` - Connexion utilisateur
 - `POST /users/register` - Inscription
 - `POST /users/request-reset` - Demande reset mot de passe
@@ -85,6 +93,7 @@ npm test
 - `POST /logout` - Déconnexion
 
 ### 👥 Users (Admin uniquement)
+
 - `GET /users` - Liste des utilisateurs
 - `GET /users/:id` - Détails utilisateur
 - `PUT /users/:id` - Modifier utilisateur
@@ -92,12 +101,14 @@ npm test
 - `GET /users/me` - Profil utilisateur connecté
 
 ### 📄 Documents
+
 - `POST /forward-document` - Transférer document
 - `POST /approve-document` - Approuver document
 - `GET /received-documents/:userId` - Documents reçus
 - `GET /latest-document` - Dernier document
 
 ### 🎯 Étapes
+
 - `GET /etapes/all` - Toutes les étapes
 - `POST /etapes` - Créer étape(s)
 - `GET /etapes/:id` - Détails étape
@@ -129,7 +140,9 @@ npm test
 ## 🐛 Débogage
 
 ### Logs
+
 Les logs sont configurés avec Pino :
+
 ```bash
 # Logs détaillés en développement
 npm run dev
@@ -139,6 +152,7 @@ npm run migrate:status
 ```
 
 ### Base de données
+
 ```bash
 # Vérifier la connexion
 psql -U postgres -d cenadi -c "SELECT version();"
